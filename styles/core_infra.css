@@ -1,0 +1,182 @@
+/* Core Infra Theme - CSS personalizado */
+
+/* Google Fonts - Inter */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
+
+/* Variables */
+:root {
+    --bg-base: #000000;
+    --surface-n1: #0A0A0A;
+    --surface-n2: #121212;
+    --border-subtle: #1F1F1F;
+    --border-strong: #333333;
+    --text-primary: #FFFFFF;
+    --text-secondary: #A1A1AA;
+    --text-muted: #52525B;
+    --brand: #080297;
+    --signal-stable: #10B981;
+    --signal-warning: #F59E0B;
+    --signal-critical: #EF4444;
+}
+
+/* Base */
+.stApp {
+    background-color: var(--bg-base) !important;
+    font-family: 'Inter', sans-serif !important;
+}
+
+/* Headers */
+h1 {
+    color: var(--text-primary) !important;
+    font-weight: 900 !important;
+    font-size: 36px !important;
+}
+
+h2 {
+    color: var(--text-primary) !important;
+    font-weight: 700 !important;
+    font-size: 20px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+}
+
+h3 {
+    color: var(--text-primary) !important;
+    font-weight: 700 !important;
+    font-size: 16px !important;
+    border-bottom: 1px solid var(--border-subtle) !important;
+    padding-bottom: 8px !important;
+    margin-bottom: 16px !important;
+}
+
+/* Metrics */
+[data-testid="stMetric"] {
+    background-color: var(--surface-n1) !important;
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: 4px !important;
+    padding: 16px !important;
+}
+
+[data-testid="stMetric"]:hover {
+    border-color: var(--border-strong) !important;
+}
+
+[data-testid="stMetricLabel"] {
+    color: var(--text-secondary) !important;
+    font-size: 12px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+}
+
+[data-testid="stMetricValue"] {
+    color: var(--text-primary) !important;
+    font-size: 24px !important;
+    font-weight: 300 !important;
+}
+
+/* Sidebar */
+[data-testid="stSidebar"] {
+    background-color: var(--surface-n1) !important;
+    border-right: 1px solid var(--border-subtle) !important;
+}
+
+[data-testid="stSidebar"] .stMarkdown {
+    color: var(--text-secondary) !important;
+}
+
+/* Expanders */
+[data-testid="stExpander"] {
+    background-color: var(--surface-n1) !important;
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: 4px !important;
+}
+
+[data-testid="stExpander"]:hover {
+    border-color: var(--border-strong) !important;
+}
+
+/* Inputs */
+.stNumberInput input,
+.stTextInput input,
+.stSelectbox>div>div {
+    background-color: var(--surface-n2) !important;
+    border: 1px solid var(--border-subtle) !important;
+    color: var(--text-primary) !important;
+    border-radius: 4px !important;
+}
+
+.stNumberInput input:focus,
+.stTextInput input:focus {
+    border-color: var(--brand) !important;
+    box-shadow: 0 0 0 1px var(--brand) !important;
+}
+
+/* Buttons */
+.stButton>button {
+    background-color: var(--brand) !important;
+    color: var(--text-primary) !important;
+    border: none !important;
+    border-radius: 4px !important;
+    font-weight: 500 !important;
+}
+
+.stButton>button:hover {
+    background-color: #0a03b8 !important;
+}
+
+/* Radio buttons */
+.stRadio>div {
+    background-color: var(--surface-n1) !important;
+    border-radius: 4px !important;
+    padding: 8px !important;
+}
+
+/* Slider */
+.stSlider>div>div>div {
+    background-color: var(--brand) !important;
+}
+
+/* Tables/DataFrames */
+.stDataFrame {
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: 4px !important;
+}
+
+/* Charts container */
+[data-testid="stVegaLiteChart"] {
+    background-color: var(--bg-base) !important;
+}
+
+/* Spinner */
+.stSpinner>div {
+    border-top-color: var(--brand) !important;
+}
+
+/* Captions */
+.stCaption {
+    color: var(--text-muted) !important;
+}
+
+/* Remove default shadows */
+* {
+    box-shadow: none !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--surface-n1);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}

@@ -1,166 +1,233 @@
-"""Lógica del modelo y cálculos financieros."""
+"""
+Módulo principal: Configuración y Fachada.
 
-from typing import Optional, Tuple, Dict, Any
-import numpy as np
+Define la configuración central del proyecto (ProjectConfig) y expone
+las funciones de alto nivel para ejecutar simulaciones.
+"""
+
 import pandas as pd
-from scipy.optimize import brentq
-from tqdm import tqdm
+import numpy as np
+from dataclasses import dataclass
+from typing import Tuple, Dict, Any, Optional
 
-from presets import (
-    generate_sales_curve,
-    generate_sales_cumulative,
-    generate_investment_curve,
-    create_land_schedule
-)
+from cashflow import construir_flujo_caja
+from metrics import calcular_van, calcular_tir, calcular_max_deficit, calcular_break_even
+from simulation import simular
+from constants import DEFAULT_ANNUAL_RATE
 
-
-def build_monthly_cashflow(
-    sales_params: dict,
-    cost_params: dict,
-    land_params: dict,
-    months: Tuple[int, int] = (0, 36),
-    n_points: int = 500,
-) -> pd.DataFrame:
+@dataclass
+class ProjectConfig:
+    """
+    Configuración central del proyecto.
+    Convierte inputs de negocio (m2, FOT) a parámetros de simulación.
+    """
+    # Inputs Proyecto
+    m2_terreno: float
+    fot: float
+    efficiency: float = 0.80
     
-    x_v, y_v_acum = generate_sales_cumulative(sales_params, months, n_points)
-    ventas_step = np.diff(y_v_acum, prepend=0.0)
+    # Inputs Cronograma
+    duracion_proy: int = 36
+    inicio_obra: int = 0
+    duracion_obra: int = 30
     
-    x_i, y_i_acum = generate_investment_curve(cost_params, months, n_points)
+    # Inputs Ventas
+    precio_promedio: float = 1800.0  # USD/m2
+    # Presets o parámetros manuales de curva
+    ventas_preset: Optional[Dict] = None 
+    ventas_custom: Optional[Dict] = None
+
+    # Inputs Costos
+    costo_m2: float = 950.0 # USD/m2
+    costos_preset: Optional[Dict] = None
+    costos_custom: Optional[Dict] = None
     
-    if not np.allclose(x_v, x_i):
-        y_i_acum = np.interp(x_v, x_i, y_i_acum)
+    # Inputs Tierra
+    tierra_preset: Optional[Dict] = None # diccionario con 'tipo' y datos
+    tierra_valor: float = 350000.0
+    canje_pct: float = 0.0 # 0.0 a 1.0
+
+    @property
+    def m2_construidos(self) -> float:
+        return self.m2_terreno * self.fot
+
+    @property
+    def m2_vendibles(self) -> float:
+        return self.m2_construidos * self.efficiency
+
+    @property
+    def ventas_brutas_totales(self) -> float:
+        return self.m2_vendibles * self.precio_promedio
+
+    @property
+    def costo_obra_total(self) -> float:
+        return self.m2_construidos * self.costo_m2
+
+    @property
+    def meses_totales(self) -> Tuple[int, int]:
+        return (0, self.duracion_proy)
+
+    @property
+    def meses_obra(self) -> Tuple[int, int]:
+        return (self.inicio_obra, self.inicio_obra + self.duracion_obra)
+
+    def generar_parametros_simulacion(self) -> Tuple[Dict, Dict, Dict]:
+        # TODO: Mover lógica de validación de presets a un metodo separado si crece.
+        # Retorna: (params_ventas, params_costos, params_tierra) para el motor.
+        # 1. Ventas
+        # Ajustamos el total por el canje si aplica
+        ventas_netas = self.ventas_brutas_totales * (1.0 - self.canje_pct)
+        
+        if self.ventas_preset:
+            p_ventas = self.ventas_preset.copy()
+            p_ventas['area_n'] = ventas_netas
+        elif self.ventas_custom:
+            p_ventas = self.ventas_custom.copy()
+            p_ventas['area_n'] = ventas_netas
+        else:
+            # Fallback
+            p_ventas = {'area_n': ventas_netas}
+
+        # 2. Costos
+        total_capex = self.costo_obra_total
+        
+        if self.costos_preset:
+            p_costos = self.costos_preset.copy()
+            p_costos['limite_n'] = total_capex
+        elif self.costos_custom:
+            p_costos = self.costos_custom.copy()
+            p_costos['limite_n'] = total_capex
+            
+            # Ajuste de moda relativa a absoluta si viene del UI "custom"
+            # En UI custom, la moda es relativa al inicio de obra
+            # Si el custom viene con 'moda_pct', no hacemos nada
+            # Si viene 'moda' absoluta, asumimos que ya está ajustada o es inputs raw
+            # Para mantener compatibilidad con UI actual que pasa 'moda' relativa a inicio:
+            if 'moda' in p_costos and 'moda_pct' not in p_costos:
+                 # Check if this looks like relative offset (small number) or absolute month
+                 # Logic de UI actual: 'moda': inicio_obra + curve_p['moda']
+                 pass
+        else:
+            p_costos = {'limite_n': total_capex}
+
+        # 3. Tierra
+        p_tierra = {}
+        if self.canje_pct > 0:
+             p_tierra = {'tipo': 'canje', 'canje_pct_m2': self.canje_pct}
+        elif self.tierra_preset:
+             p_tierra = self.tierra_preset.copy()
+             p_tierra['valor_total'] = self.tierra_valor
+        
+        return p_ventas, p_costos, p_tierra
+
+def ejecutar_deterministico(
+    parametros_ventas: dict,
+    parametros_costos: dict,
+    parametros_tierra: dict,
+    meses_totales: Tuple[int, int],
+    meses_obra: Tuple[int, int],
+    tasa_anual: float = DEFAULT_ANNUAL_RATE
+) -> Tuple[pd.DataFrame, Dict[str, float]]:
+    """Correr un escenario determinístico único."""
+    # Construir flujo
+    df = construir_flujo_caja(
+        parametros_ventas, 
+        parametros_costos, 
+        parametros_tierra, 
+        meses_totales, 
+        meses_obra
+    )
     
-    x = x_v
-    inv_obra_step = np.diff(y_i_acum, prepend=0.0)
-
-    land_schedule = create_land_schedule(land_params, months)
-    land_acum = np.cumsum(land_schedule)
-    months_int = np.arange(len(land_schedule))
-    land_acum_interp = np.interp(x, months_int, land_acum)
-    land_step = np.diff(land_acum_interp, prepend=0.0)
-
-    total_egresos = inv_obra_step + land_step
-    flujo_neto = ventas_step - total_egresos
-    cash_acum = np.cumsum(flujo_neto)
-
-    df = pd.DataFrame({
-        'Mes': x,
-        'Flujo_Neto': flujo_neto,
-        'Cash_Acumulado': cash_acum,
-        'Ventas': ventas_step,
-        'Egresos_Obra': inv_obra_step,
-        'Egresos_Tierra': land_step
-    })
-    return df
-
-
-def van(df: pd.DataFrame, annual_rate: float) -> float:
-    monthly_rate = (1 + annual_rate) ** (1 / 12) - 1
-    cash = df['Flujo_Neto'].values
-    t = df['Mes'].values
-    discounts = (1 + monthly_rate) ** t
-    return float(np.sum(cash / discounts))
-
-
-def tir(df: pd.DataFrame, guess_bounds: Tuple[float, float] = (-0.99, 10.0)) -> Optional[float]:
-    cash = df['Flujo_Neto'].values
-    t = df['Mes'].values
-
-    def npv_annual(r):
-        monthly = (1 + r) ** (1 / 12) - 1
-        disc = (1 + monthly) ** t
-        return np.sum(cash / disc)
-
-    a, b = guess_bounds
-    try:
-        return float(brentq(lambda r: npv_annual(r), a, b, maxiter=500))
-    except Exception:
-        return None
-
-
-def max_drawdown(df: pd.DataFrame) -> Tuple[float, Optional[float]]:
-    cum = df['Cash_Acumulado'].values
-    min_val = float(np.min(cum))
-    idx = int(np.argmin(cum))
-    need = float(-min_val) if min_val < 0 else 0.0
-    return need, float(df['Mes'].iloc[idx]) if need > 0 else None
-
-
-def break_even_month(df: pd.DataFrame) -> Optional[float]:
-    mask = df['Cash_Acumulado'] >= 0
-    if mask.any():
-        return float(df.loc[mask, 'Mes'].iloc[0])
-    return None
-
-
-def run_deterministic(
-    sales_params: dict,
-    cost_params: dict,
-    land_params: dict,
-    months: Tuple[int, int] = (0, 36),
-    annual_rate: float = 0.10,
-    n_points: int = 500,
-) -> Tuple[pd.DataFrame, dict]:
+    # Calcular métricas
+    van = calcular_van(df, tasa_anual)
+    tir = calcular_tir(df)
+    deficit, mes_deficit = calcular_max_deficit(df)
+    break_even = calcular_break_even(df)
     
-    df = build_monthly_cashflow(sales_params, cost_params, land_params, months, n_points)
-    
-    need, need_m = max_drawdown(df)
-    
-    metrics = {
-        'VAN': van(df, annual_rate),
-        'TIR': tir(df),
-        'BreakEvenMonth': break_even_month(df),
-        'MaxFinancingNeed': need,
-        'MaxFinancingMonth': need_m
+    metricas = {
+        'VAN': van,
+        'TIR': tir,
+        'MaxFinancingNeed': deficit,
+        'MaxFinancingMonth': mes_deficit,
+        'BreakEvenMonth': break_even
     }
-    return df, metrics
+    
+    return df, metricas
 
 
-def run_montecarlo(
-    n_sims: int,
-    base_sales_params: dict,
-    base_cost_params: dict,
-    base_land_params: dict,
-    months: Tuple[int, int] = (0, 36),
-    annual_rate: float = 0.10,
-    n_points: int = 500,
-    sales_cv: float = 0.15,
-    cost_cv: float = 0.15,
-    seed: Optional[int] = None,
-    use_progress: bool = False
+def ejecutar_montecarlo(
+    n_iteraciones: int,
+    parametros_ventas: dict,
+    parametros_costos: dict,
+    parametros_tierra: dict,
+    meses_totales: Tuple[int, int],
+    meses_obra: Tuple[int, int],
+    tasa_descuento: float = DEFAULT_ANNUAL_RATE,
+    variacion_ventas: float = 0.0,
+    variacion_costos: float = 0.0,
+    semilla: Optional[int] = None,
+    retornar_curvas: bool = True,
+    max_curvas: int = 200
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Wrapper para lanzar la simulación Monte Carlo."""
+    return simular(
+        n_iteraciones=n_iteraciones,
+        parametros_ventas=parametros_ventas,
+        parametros_costos=parametros_costos,
+        parametros_tierra=parametros_tierra,
+        meses=meses_totales,
+        meses_obra=meses_obra,
+        tasa_descuento=tasa_descuento,
+        variacion_ventas=variacion_ventas,
+        variacion_costos=variacion_costos,
+        semilla=semilla,
+        retornar_curvas=retornar_curvas,
+        max_curvas=max_curvas,
+        mostrar_progreso=True
+    )
+
+
+def ejecutar_analisis_sensibilidad(
+    parametros_ventas: dict,
+    parametros_costos: dict,
+    parametros_tierra: dict,
+    meses_totales: Tuple[int, int],
+    meses_obra: Tuple[int, int],
+    tasa_anual: float,
+    pasos: int = 5
 ) -> pd.DataFrame:
+    """Matriz de sensibilidad Precio vs Costo (+/- 20% en pasos n)."""
+    # Rango +/- 20%
+    variaciones = np.linspace(-0.20, 0.20, pasos)
     
-    rng = np.random.default_rng(seed)
-    results = []
+    resultados = []
     
-    area_base = base_sales_params.get('area_n', 1000)
-    inv_base = base_cost_params.get('limite_n', 1000)
+    base_ventas = parametros_ventas.get('area_n', 1000)
+    base_costos = parametros_costos.get('limite_n', 1000)
     
-    iterator = range(n_sims)
-    if use_progress:
-        iterator = tqdm(iterator, desc="Simulando Escenarios", unit="sim")
-
-    for i in iterator:
-        area_s = max(0.0, rng.normal(area_base, area_base * sales_cv))
-        s_alpha = rng.normal(base_sales_params.get('alpha', 0), 0.5)
-        s_scale = max(0.1, rng.normal(base_sales_params.get('scale', 1), 1.0))
-        
-        sim_sales = {**base_sales_params, 'area_n': area_s, 'alpha': s_alpha, 'scale': s_scale}
-
-        inv_s = max(0.0, rng.normal(inv_base, inv_base * cost_cv))
-        c_alpha = rng.normal(base_cost_params.get('alpha', 0), 0.5)
-        c_scale = max(0.1, rng.normal(base_cost_params.get('scale', 1), 1.0))
-        
-        sim_cost = {**base_cost_params, 'limite_n': inv_s, 'alpha': c_alpha, 'scale': c_scale}
-
-        df = build_monthly_cashflow(sim_sales, sim_cost, base_land_params, months, n_points)
-        
-        results.append({
-            'sim_id': i,
-            'VAN': van(df, annual_rate),
-            'TIR': tir(df),
-            'Total_Ventas': area_s,
-            'Total_Costo': inv_s
-        })
-        
-    return pd.DataFrame(results)
+    for var_v in variaciones:
+        for var_c in variaciones:
+            # Ajustar params
+            p_ventas = parametros_ventas.copy()
+            p_ventas['area_n'] = base_ventas * (1 + var_v)
+            
+            p_costos = parametros_costos.copy()
+            p_costos['limite_n'] = base_costos * (1 + var_c)
+            
+            # Ejecutar modelo
+            df = construir_flujo_caja(
+                p_ventas, p_costos, parametros_tierra, 
+                meses_totales, meses_obra
+            )
+            
+            van = calcular_van(df, tasa_anual)
+            tir = calcular_tir(df)
+            
+            resultados.append({
+                'Variacion_Precio': var_v,
+                'Variacion_Costo': var_c,
+                'VAN': van,
+                'TIR': tir
+            })
+            
+    return pd.DataFrame(resultados)
