@@ -4,3 +4,5 @@ pandas
 scipy
 streamlit
 altair
+tqdm
+watchdog
