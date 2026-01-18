@@ -709,6 +709,7 @@ def crear_matrices_sensibilidad(df_sens: pd.DataFrame) -> alt.HConcatChart:
     # Reemplazar NaN para evitar errores de JSON
     df_clean = df_sens.copy()
     df_clean['TIR'] = df_clean['TIR'].fillna(0)
+    df_clean['VAN'] = df_clean['VAN'].fillna(0)
     
     # Calcular absolutos para el tamaño de la burbuja
     df_clean['abs_VAN'] = df_clean['VAN'].abs()

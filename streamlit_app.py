@@ -260,11 +260,11 @@ with st.spinner("Calculando..."):
     )
     chart_sens_van, chart_sens_tir = viz.crear_matrices_sensibilidad(df_sens)
     
-    c1, c2 = st.columns(2)
-    with c1:
-        st.altair_chart(chart_sens_van, use_container_width=True)
-    with c2:
-        st.altair_chart(chart_sens_tir, use_container_width=True)
+c1, c2 = st.columns(2)
+with c1:
+    st.altair_chart(chart_sens_van, use_container_width=True)
+with c2:
+    st.altair_chart(chart_sens_tir, use_container_width=True)
 
 
 # DEBUG / DATA
