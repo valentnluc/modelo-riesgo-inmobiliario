@@ -627,7 +627,7 @@ def crear_dashboard_detallado(
 
     top_chart = alt.layer(*top_layers).properties(
         title=alt.TitleParams('Ingresos vs Egresos (Neto)', fontSize=14, anchor='start'),
-        width=CHART_WIDTH,
+        width="container",
         height=CHART_HEIGHT_MAIN
     )
 
@@ -690,7 +690,7 @@ def crear_dashboard_detallado(
         
     bottom_chart = alt.layer(*bottom_layers).properties(
         title=alt.TitleParams('Evolución del Saldo (Riesgo)', fontSize=14, anchor='start'),
-        width=CHART_WIDTH,
+        width="container",
         height=200
     )
     
@@ -1245,4 +1245,3 @@ def plot_montecarlo_results(df_mc: pd.DataFrame, output_dir: str) -> None:
     chart_van, chart_tir = get_montecarlo_charts(df_mc)
     chart_van.save(os.path.join(output_dir, 'mc_van.html'))
     chart_tir.save(os.path.join(output_dir, 'mc_tir.html'))
-
