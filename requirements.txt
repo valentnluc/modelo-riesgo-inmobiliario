@@ -3,6 +3,6 @@ numpy
 pandas
 scipy
 streamlit
-altair
+altair<5
 tqdm
 watchdog
