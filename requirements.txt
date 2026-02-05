@@ -2,7 +2,7 @@
 numpy
 pandas
 scipy
-streamlit
-altair<5
+streamlit>=1.36,<2
+altair>=5,<7
 tqdm
 watchdog
