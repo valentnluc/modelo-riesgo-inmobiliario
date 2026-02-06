@@ -342,6 +342,35 @@ def get_cost_comparison_chart(months: Tuple[int, int], inversion_total: float) -
     ).properties(title='Curvas de Costos', width=CHART_WIDTH, height=CHART_HEIGHT_MAIN)
 
 
+def get_preset_preview_chart(
+    preset_params: dict,
+    months: Tuple[int, int],
+    total_value: float,
+    kind: str
+) -> alt.Chart:
+    """Mini preview chart for a selected preset."""
+    if kind not in {"ventas", "costos"}:
+        raise ValueError("kind must be 'ventas' or 'costos'")
+
+    if kind == "ventas":
+        params = {**preset_params, "area_n": total_value}
+        x, y = generar_curva_ventas(params, months)
+        y_label = "Ventas"
+        color = COLOR_INCOME
+    else:
+        params = {**preset_params, "limite_n": total_value}
+        x, y = generar_curva_inversion(params, months)
+        y_label = "Costos"
+        color = COLOR_EXPENSE
+
+    df = pd.DataFrame({"Mes": x, "Valor": y})
+    return alt.Chart(df).mark_line(color=color, strokeWidth=2).encode(
+        x=alt.X("Mes:Q", title=None),
+        y=alt.Y("Valor:Q", title=y_label, axis=alt.Axis(format="~s")),
+        tooltip=[alt.Tooltip("Mes:Q", title="Mes"), alt.Tooltip("Valor:Q", format="~s")]
+    ).properties(height=120, width="container")
+
+
 # --- Dashboards Principales ---
 
 def get_cashflow_chart(
@@ -627,7 +656,7 @@ def crear_dashboard_detallado(
 
     top_chart = alt.layer(*top_layers).properties(
         title=alt.TitleParams('Ingresos vs Egresos (Neto)', fontSize=14, anchor='start'),
-        width=CHART_WIDTH,
+        width="container",
         height=CHART_HEIGHT_MAIN
     )
 
@@ -690,7 +719,7 @@ def crear_dashboard_detallado(
         
     bottom_chart = alt.layer(*bottom_layers).properties(
         title=alt.TitleParams('Evolución del Saldo (Riesgo)', fontSize=14, anchor='start'),
-        width=CHART_WIDTH,
+        width="container",
         height=200
     )
     
@@ -1245,4 +1274,3 @@ def plot_montecarlo_results(df_mc: pd.DataFrame, output_dir: str) -> None:
     chart_van, chart_tir = get_montecarlo_charts(df_mc)
     chart_van.save(os.path.join(output_dir, 'mc_van.html'))
     chart_tir.save(os.path.join(output_dir, 'mc_tir.html'))
-

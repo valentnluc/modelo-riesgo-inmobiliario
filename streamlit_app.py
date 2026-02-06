@@ -93,6 +93,13 @@ with st.sidebar.expander("3. Ventas", expanded=False):
         sales_preset_key = st.selectbox("Preset", list(VENTAS_PRESETS.keys()))
         ventas_preset_dict = VENTAS_PRESETS[sales_preset_key].copy()
         st.caption(ventas_preset_dict['descripcion'])
+        preview_sales = viz.get_preset_preview_chart(
+            ventas_preset_dict,
+            months=(0, int(duracion_proy)),
+            total_value=total_sales_raw,
+            kind="ventas"
+        )
+        st.altair_chart(preview_sales, width="stretch")
     else:
         # For custom, we just pass the curve shape params, amount is handled by Config
         curve_p = crear_inputs_curva("ventas", duracion_proy)
@@ -115,6 +122,13 @@ with st.sidebar.expander("4. Costos", expanded=False):
         cost_preset_key = st.selectbox("Preset", list(COSTOS_PRESETS.keys()), key="cost_preset")
         costos_preset_dict = COSTOS_PRESETS[cost_preset_key].copy()
         st.caption(costos_preset_dict['descripcion'])
+        preview_costs = viz.get_preset_preview_chart(
+            costos_preset_dict,
+            months=(int(inicio_obra), int(inicio_obra + duracion_obra)),
+            total_value=total_capex,
+            kind="costos"
+        )
+        st.altair_chart(preview_costs, width="stretch")
     else:
         # Custom curve params
         curve_p = crear_inputs_curva("costos", duracion_obra, {'alpha': -0.5})
@@ -228,10 +242,21 @@ else:
     k6.metric("Prob. Perdida", "-", help="Modo Monte Carlo")
     k7.metric("Break Even", f"M{int(metricas_base['BreakEvenMonth'])}" if metricas_base['BreakEvenMonth'] else "-")
 
+if is_mc and df_mc is not None:
+    van_stats = df_mc['VAN'].describe(percentiles=[0.05, 0.95])
+    st.info(
+        "Con 90% de confianza, el VAN estará entre "
+        f"{format_currency(van_stats['5%'])} y {format_currency(van_stats['95%'])}."
+    )
+else:
+    st.info(
+        "Escenario base determinístico. Activá Monte Carlo para estimar el rango de resultados."
+    )
 
 # GRÁFICOS FRONTAJES
 
 st.markdown("### Flujos del Proyecto")
+st.caption("Lectura rápida: barras de ingresos/egresos y ticks del flujo neto mensual.")
 
 # Usar funciones unificadas
 # Usar nueva visualización "Flujo Neto + Balance"
@@ -241,7 +266,7 @@ st.altair_chart(viz.crear_dashboard_detallado(
     es_montecarlo=(is_mc and df_curvas is not None),
     fin_obra=meses_obra[1],
     break_even_month=metricas_base.get('BreakEvenMonth')
-), use_container_width=True)
+), width="stretch")
 
 # Mantener gráfico de balance detallado abajo si se desea, o removerlo.
 # El usuario pidió "Net Monthly Bars with Rolling Balance Line", que combina ambos.
@@ -262,32 +287,76 @@ with st.spinner("Calculando..."):
     
 c1, c2 = st.columns(2)
 with c1:
-    st.altair_chart(chart_sens_van, use_container_width=True)
+    st.altair_chart(chart_sens_van, width="stretch")
 with c2:
-    st.altair_chart(chart_sens_tir, use_container_width=True)
+    st.altair_chart(chart_sens_tir, width="stretch")
 
+st.markdown("### Sensibilidad Rapida")
+col_a, col_b = st.columns(2)
+with col_a:
+    precio_factor = st.slider("Precio vs Base", 0.7, 1.3, 1.0, 0.05, format="%.2f")
+with col_b:
+    costo_factor = st.slider("Costo vs Base", 0.7, 1.3, 1.0, 0.05, format="%.2f")
+
+params_ventas_sens = parametros_ventas.copy()
+params_costos_sens = parametros_costos.copy()
+params_ventas_sens['area_n'] = params_ventas_sens.get('area_n', 0) * precio_factor
+params_costos_sens['limite_n'] = params_costos_sens.get('limite_n', 0) * costo_factor
+
+df_sens_base, metricas_sens = model.ejecutar_deterministico(
+    params_ventas_sens, params_costos_sens, parametros_tierra,
+    meses_totales=meses_totales, meses_obra=meses_obra, tasa_anual=tasa_anual
+)
+st.caption("Ajuste rápido de precio y costo sobre el escenario base.")
+st.write(
+    f"VAN: {format_currency(metricas_sens['VAN'])} | "
+    f"TIR: {format_percent(metricas_sens['TIR'])} | "
+    f"Capital Trabajo: {format_currency(metricas_sens['MaxFinancingNeed'])}"
+)
 
 # DEBUG / DATA
 
-with st.expander("Bajo el Capo"):
+if is_mc and df_mc is not None:
+    st.markdown("### Distribuciones (Monte Carlo)")
+    chart_van, chart_tir = viz.crear_graficos_montecarlo(df_mc)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.altair_chart(chart_van, width="stretch")
+    with c2:
+        st.altair_chart(chart_tir, width="stretch")
     
+    chart_ventas, chart_costos = viz.crear_graficos_distribucion_montecarlo(df_mc)
+    c3, c4 = st.columns(2)
+    with c3:
+       st.altair_chart(chart_ventas, width="stretch")
+    with c4:
+       st.altair_chart(chart_costos, width="stretch")
+
+with st.expander("Bajo el Capo"):
     if is_mc and df_mc is not None:
-        st.markdown("#### Distribuciones")
-        chart_van, chart_tir = viz.crear_graficos_montecarlo(df_mc)
-        c1, c2 = st.columns(2)
-        with c1:
-            st.altair_chart(chart_van, use_container_width=True)
-        with c2:
-            st.altair_chart(chart_tir, use_container_width=True)
-        
-        chart_ventas, chart_costos = viz.crear_graficos_distribucion_montecarlo(df_mc)
-        c3, c4 = st.columns(2)
-        with c3:
-           st.altair_chart(chart_ventas, use_container_width=True)
-        with c4:
-           st.altair_chart(chart_costos, use_container_width=True)
-        
         st.markdown("#### Datos")
         st.dataframe(df_mc, width="stretch")
     else:
         st.dataframe(df_base, width="stretch")
+
+st.markdown("### Comparación de Escenarios")
+escenarios = {
+    "Base": (1.0, 1.0),
+    "Pesimista": (0.9, 1.1),
+    "Optimista": (1.1, 0.9)
+}
+cols = st.columns(3)
+for col, (label, (f_precio, f_costo)) in zip(cols, escenarios.items()):
+    params_ventas = parametros_ventas.copy()
+    params_costos = parametros_costos.copy()
+    params_ventas['area_n'] = params_ventas.get('area_n', 0) * f_precio
+    params_costos['limite_n'] = params_costos.get('limite_n', 0) * f_costo
+    _, metrics = model.ejecutar_deterministico(
+        params_ventas, params_costos, parametros_tierra,
+        meses_totales=meses_totales, meses_obra=meses_obra, tasa_anual=tasa_anual
+    )
+    with col:
+        st.subheader(label)
+        st.metric("VAN", format_currency(metrics['VAN']))
+        st.metric("TIR", format_percent(metrics['TIR']))
+        st.metric("Capital Trabajo", format_currency(metrics['MaxFinancingNeed']))
