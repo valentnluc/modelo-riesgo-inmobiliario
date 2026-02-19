@@ -4,6 +4,7 @@ Modelo de Riesgo Inmobiliario - Aplicación Streamlit.
 Vista unificada con misma estructura para determinístico y Monte Carlo.
 """
 
+import json
 import streamlit as st
 import model
 import viz
@@ -55,10 +56,8 @@ st.markdown("---")
 
 st.sidebar.header("Configuracion")
 
-sim_type = st.sidebar.radio("Modo", ["Deterministico", "Monte Carlo"], horizontal=True)
 tasa_anual = st.sidebar.number_input("Tasa Descuento Anual", value=0.12, step=0.01, format="%.2f")
-
-is_mc = sim_type == "Monte Carlo"
+is_mc = True
 
 # --- Proyecto ---
 with st.sidebar.expander("1. Proyecto", expanded=True):
@@ -205,42 +204,43 @@ df_base, metricas_base = model.ejecutar_deterministico(
 df_mc = None
 df_curvas = None
 
-if is_mc:
-    with st.spinner(f"Calculando {parametros_mc['n_sims']:,} escenarios..."):
-        df_mc, df_curvas = model.ejecutar_montecarlo(
-            parametros_mc['n_sims'], parametros_ventas, parametros_costos, parametros_tierra,
-            meses_totales, meses_obra, tasa_descuento=tasa_anual,
-            variacion_ventas=parametros_mc['sales_cv'], variacion_costos=parametros_mc['cost_cv'],
-            semilla=parametros_mc['seed'], retornar_curvas=True, max_curvas=200
-        )
+with st.spinner(f"Calculando {parametros_mc['n_sims']:,} escenarios..."):
+    df_mc, df_curvas = model.ejecutar_montecarlo(
+        parametros_mc['n_sims'], parametros_ventas, parametros_costos, parametros_tierra,
+        meses_totales, meses_obra, tasa_descuento=tasa_anual,
+        variacion_ventas=parametros_mc['sales_cv'], variacion_costos=parametros_mc['cost_cv'],
+        semilla=parametros_mc['seed'], retornar_curvas=True, max_curvas=200
+    )
+
+with st.spinner("Calculando sensibilidad..."):
+    df_sens = model.ejecutar_analisis_sensibilidad(
+        parametros_ventas, parametros_costos, parametros_tierra,
+        meses_totales, meses_obra, tasa_anual,
+        pasos=4
+    )
 
 
 # KPIs
 
 st.markdown("### Metricas Clave")
 
-# KPIs Monte Carlo usa más columnas
-if is_mc and df_mc is not None:
-    k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
-    van_stats = df_mc['VAN'].describe(percentiles=[0.05, 0.5, 0.95])
-    prob_loss = (df_mc['VAN'] < 0).mean()
-    
-    k1.metric("VAN Base", format_currency(metricas_base['VAN']), help="Valor Actual Neto escenario base")
-    k2.metric("TIR", format_percent(metricas_base['TIR']), help="Tasa Interna de Retorno")
-    k3.metric("Capital Trabajo", format_currency(metricas_base['MaxFinancingNeed']), help="Maxima necesidad financiera (Déficit acumulado)")
-    k4.metric("VAN P05", format_currency(van_stats['5%']), help="Percentil 05 (pesimista)")
-    k5.metric("VAN P95", format_currency(van_stats['95%']), help="Percentil 95 (optimista)")
-    k6.metric("Prob. Perdida", format_percent(prob_loss), help="% escenarios VAN < 0")
-    k7.metric("Break Even", f"M{int(metricas_base['BreakEvenMonth'])}" if metricas_base['BreakEvenMonth'] else "-")
-else:
-    k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
-    k1.metric("VAN Base", format_currency(metricas_base['VAN']), help="Valor Actual Neto")
-    k2.metric("TIR", format_percent(metricas_base['TIR']), help="Tasa Interna de Retorno")
-    k3.metric("Capital Trabajo", format_currency(metricas_base['MaxFinancingNeed']), help="Maxima necesidad financiera")
-    k4.metric("VAN P05", "-", help="Modo Monte Carlo")
-    k5.metric("VAN P95", "-", help="Modo Monte Carlo")
-    k6.metric("Prob. Perdida", "-", help="Modo Monte Carlo")
-    k7.metric("Break Even", f"M{int(metricas_base['BreakEvenMonth'])}" if metricas_base['BreakEvenMonth'] else "-")
+van_stats = df_mc['VAN'].describe(percentiles=[0.05, 0.5, 0.95])
+prob_loss = (df_mc['VAN'] < 0).mean()
+
+k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
+k1.metric("VAN Base", format_currency(metricas_base['VAN']), help="Valor Actual Neto escenario base")
+k2.metric("TIR", format_percent(metricas_base['TIR']), help="Tasa Interna de Retorno")
+k3.metric("Capital Trabajo", format_currency(metricas_base['MaxFinancingNeed']), help="Maxima necesidad financiera (Déficit acumulado)")
+k4.metric("VAN P05", format_currency(van_stats['5%']), help="Percentil 05 (pesimista)")
+k5.metric("VAN P95", format_currency(van_stats['95%']), help="Percentil 95 (optimista)")
+k6.metric("Prob. Perdida", format_percent(prob_loss), help="% escenarios VAN < 0")
+k7.metric("Break Even", f"M{int(metricas_base['BreakEvenMonth'])}" if metricas_base['BreakEvenMonth'] else "-")
+
+st.info(
+    "Con 90% de confianza, el VAN estará entre "
+    f"{format_currency(van_stats['5%'])} y {format_currency(van_stats['95%'])}. "
+    f"Riesgo de pérdida: {format_percent(prob_loss)}."
+)
 
 if is_mc and df_mc is not None:
     van_stats = df_mc['VAN'].describe(percentiles=[0.05, 0.95])
@@ -253,37 +253,46 @@ else:
         "Escenario base determinístico. Activá Monte Carlo para estimar el rango de resultados."
     )
 
-# GRÁFICOS FRONTAJES
+st.markdown("### Resumen Ejecutivo")
+st.caption("Síntesis del escenario con KPIs decisivos y gráficos esenciales.")
 
 st.markdown("### Flujos del Proyecto")
 st.caption("Lectura rápida: barras de ingresos/egresos y ticks del flujo neto mensual.")
 
-# Usar funciones unificadas
-# Usar nueva visualización "Flujo Neto + Balance"
-flow_data = df_curvas if (is_mc and df_curvas is not None) else df_base
-st.altair_chart(viz.crear_dashboard_detallado(
+st.markdown("#### Gráficos esenciales")
+flow_data = df_curvas if df_curvas is not None else df_base
+flow_chart = viz.crear_dashboard_detallado(
     flow_data,
-    es_montecarlo=(is_mc and df_curvas is not None),
+    es_montecarlo=df_curvas is not None,
     fin_obra=meses_obra[1],
     break_even_month=metricas_base.get('BreakEvenMonth')
 ), width="stretch")
 
-# Mantener gráfico de balance detallado abajo si se desea, o removerlo.
-# El usuario pidió "Net Monthly Bars with Rolling Balance Line", que combina ambos.
-# Removeré los dos gráficos separados anteriores para cumplir con "lectura más directa".
+report_kpis = [
+    ("VAN Mediana", format_currency(van_stats['50%'])),
+    ("VAN P05", format_currency(van_stats['5%'])),
+    ("VAN P95", format_currency(van_stats['95%'])),
+    ("Prob. Perdida", format_percent(prob_loss)),
+    ("Capital Trabajo", format_currency(metricas_base['MaxFinancingNeed'])),
+]
 
+report_html = _build_report_html(report_message, report_kpis, [flow_chart, chart_van, chart_sens_van])
+st.download_button(
+    "Descargar reporte ejecutivo (HTML)",
+    data=report_html,
+    file_name="reporte-ejecutivo.html",
+    mime="text/html"
+)
+
+# GRÁFICOS FRONTAJES
+
+st.markdown("### Flujos del Proyecto")
+st.caption("Lectura rápida: barras de ingresos/egresos y ticks del flujo neto mensual.")
+st.altair_chart(flow_chart, width="stretch")
 
 # SENSIBILIDAD
 
 st.markdown("### Analisis de Sensibilidad")
-
-with st.spinner("Calculando..."):
-    df_sens = model.ejecutar_analisis_sensibilidad(
-        parametros_ventas, parametros_costos, parametros_tierra,
-        meses_totales, meses_obra, tasa_anual,
-        pasos=4  # Menos dimensiones, números más grandes
-    )
-    chart_sens_van, chart_sens_tir = viz.crear_matrices_sensibilidad(df_sens)
     
 c1, c2 = st.columns(2)
 with c1:
