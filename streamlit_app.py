@@ -47,6 +47,52 @@ def render_altair_stretch(chart):
     st.altair_chart(chart, width="stretch")
 
 
+def recalcular_metricas_escenario(
+    parametros_ventas_base: dict,
+    parametros_costos_base: dict,
+    parametros_tierra: dict,
+    meses_totales: tuple,
+    meses_obra: tuple,
+    tasa_anual: float,
+    factor_precio: float = 1.0,
+    factor_costo: float = 1.0
+) -> dict:
+    """Recalcula métricas determinísticas aplicando factores sobre ventas/costos."""
+    params_ventas = parametros_ventas_base.copy()
+    params_costos = parametros_costos_base.copy()
+
+    params_ventas['area_n'] = params_ventas.get('area_n', 0) * factor_precio
+    params_costos['limite_n'] = params_costos.get('limite_n', 0) * factor_costo
+
+    _, metricas = model.ejecutar_deterministico(
+        params_ventas,
+        params_costos,
+        parametros_tierra,
+        meses_totales=meses_totales,
+        meses_obra=meses_obra,
+        tasa_anual=tasa_anual
+    )
+    return metricas
+
+
+def clasificar_escenario(metricas: dict) -> tuple[str, str]:
+    """Devuelve etiqueta y comentario simple de atractivo/riesgo del escenario."""
+    van = metricas.get('VAN', 0)
+    tir = metricas.get('TIR', 0)
+    capital_trabajo = metricas.get('MaxFinancingNeed', 0)
+
+    if van > 0 and tir >= 0.18 and capital_trabajo < 0.4 * van:
+        return "🟢 Atractivo", "Buen margen y presión financiera manejable."
+    if van > 0 and tir >= 0.12:
+        return "🟡 Requiere mitigación", "Rentable, pero con sensibilidad a ejecución/financiación."
+    return "🔴 Frágil", "Perfil vulnerable: revisar supuestos, costos y estrategia comercial."
+
+
+def formatear_delta(valor_escenario: float, valor_base: float, formatter) -> str:
+    """Formatea delta absoluto versus el escenario base."""
+    return formatter(valor_escenario - valor_base)
+
+
 # =============================================================================
 # HEADER
 # =============================================================================
@@ -277,22 +323,50 @@ escenarios = {
     "Pesimista": (0.9, 1.1, "Precio -10% | Costo +10%"),
     "Optimista": (1.1, 0.9, "Precio +10% | Costo -10%")
 }
-cols = st.columns(3)
-for col, (label, (f_precio, f_costo, detalle)) in zip(cols, escenarios.items()):
-    params_ventas = parametros_ventas.copy()
-    params_costos = parametros_costos.copy()
-    params_ventas['area_n'] = params_ventas.get('area_n', 0) * f_precio
-    params_costos['limite_n'] = params_costos.get('limite_n', 0) * f_costo
-    _, metrics = model.ejecutar_deterministico(
-        params_ventas, params_costos, parametros_tierra,
-        meses_totales=meses_totales, meses_obra=meses_obra, tasa_anual=tasa_anual
+metricas_escenarios = {
+    label: recalcular_metricas_escenario(
+        parametros_ventas,
+        parametros_costos,
+        parametros_tierra,
+        meses_totales,
+        meses_obra,
+        tasa_anual,
+        factor_precio=f_precio,
+        factor_costo=f_costo
     )
+    for label, (f_precio, f_costo, _) in escenarios.items()
+}
+metricas_base_escenario = metricas_escenarios["Base"]
+
+cols = st.columns(3)
+for col, (label, (_, _, detalle)) in zip(cols, escenarios.items()):
+    metrics = metricas_escenarios[label]
+    insight_label, insight_text = clasificar_escenario(metrics)
+
     with col:
         st.subheader(label)
         st.caption(detalle)
-        st.metric("VAN", format_currency(metrics['VAN']))
-        st.metric("TIR", format_percent(metrics['TIR']))
-        st.metric("Capital Trabajo", format_currency(metrics['MaxFinancingNeed']))
+        st.metric(
+            "VAN",
+            format_currency(metrics['VAN']),
+            delta=formatear_delta(metrics['VAN'], metricas_base_escenario['VAN'], format_currency)
+        )
+        st.metric(
+            "TIR",
+            format_percent(metrics['TIR']),
+            delta=formatear_delta(metrics['TIR'], metricas_base_escenario['TIR'], format_percent)
+        )
+        st.metric(
+            "Capital Trabajo",
+            format_currency(metrics['MaxFinancingNeed']),
+            delta=formatear_delta(
+                metrics['MaxFinancingNeed'],
+                metricas_base_escenario['MaxFinancingNeed'],
+                format_currency
+            )
+        )
+        st.markdown(f"**{insight_label}**")
+        st.caption(insight_text)
 
 # 5. Distribuciones (Monte Carlo)
 if df_mc is not None:
@@ -319,14 +393,15 @@ with st.expander("Bajo el capot"):
     with col_b:
         costo_factor = st.slider("Costo vs Base", 0.7, 1.3, 1.0, 0.05, format="%.2f")
 
-    params_ventas_sens = parametros_ventas.copy()
-    params_costos_sens = parametros_costos.copy()
-    params_ventas_sens['area_n'] = params_ventas_sens.get('area_n', 0) * precio_factor
-    params_costos_sens['limite_n'] = params_costos_sens.get('limite_n', 0) * costo_factor
-
-    _, metricas_sens = model.ejecutar_deterministico(
-        params_ventas_sens, params_costos_sens, parametros_tierra,
-        meses_totales=meses_totales, meses_obra=meses_obra, tasa_anual=tasa_anual
+    metricas_sens = recalcular_metricas_escenario(
+        parametros_ventas,
+        parametros_costos,
+        parametros_tierra,
+        meses_totales,
+        meses_obra,
+        tasa_anual,
+        factor_precio=precio_factor,
+        factor_costo=costo_factor
     )
     st.caption("Ajuste rápido de precio y costo sobre el escenario base.")
     st.write(
