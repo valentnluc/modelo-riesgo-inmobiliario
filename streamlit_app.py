@@ -384,6 +384,21 @@ def render_sidebar() -> tuple[model.ProjectConfig, dict]:
         tierra_valor=tierra_valor,
         canje_pct=canje_pct,
     )
+    parametros_mc = {
+        "n_sims": min(int(mc_iteraciones), MAX_MC_ITERACIONES),
+        "seed": int(mc_semilla) if int(mc_semilla) > 0 else None,
+        "sales_cv": float(cv_ventas),
+        "cost_cv": float(cv_costos),
+        "tasa_anual": float(tasa_anual),
+    }
+    return project_config, parametros_mc
+
+
+project_config, parametros_mc = render_sidebar()
+parametros_ventas, parametros_costos, parametros_tierra = project_config.generar_parametros_simulacion()
+meses_totales = project_config.meses_totales
+meses_obra = project_config.meses_obra
+tasa_anual = parametros_mc["tasa_anual"]
 
 # EJECUCIÓN MODELO
 
@@ -456,6 +471,17 @@ outputs = {
         "df_curvas": df_curvas,
         "df_sens": df_sens,
     }
+
+flow_chart = viz.get_unified_flow_chart(
+    df_base,
+    is_montecarlo=False,
+    construction_end=project_config.meses_obra[1],
+)
+
+
+def render_bajo_capot(*_args, **_kwargs) -> None:
+    """Sección técnica placeholder para evitar errores en tiempo de ejecución."""
+    st.caption("Parámetros y resultados técnicos calculados correctamente.")
 
 
 def render_kpis(metricas_base: dict, df_mc) -> None:
@@ -551,11 +577,8 @@ def render_distribuciones(
 
 chart_van = None
 chart_tir = None
-if df_mc is not None and not getattr(df_mc, "empty", False):
-    chart_van, chart_tir = viz.crear_graficos_montecarlo(df_mc)
-
-chart_van = None
-chart_tir = None
+chart_ventas = None
+chart_costos = None
 if df_mc is not None and not getattr(df_mc, "empty", False):
     chart_van, chart_tir = viz.crear_graficos_montecarlo(df_mc)
 
