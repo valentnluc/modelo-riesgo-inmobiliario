@@ -43,6 +43,10 @@ def crear_inputs_curva(prefix: str, duration: int, defaults: dict = None) -> dic
         scale = st.number_input("Dispersion", value=defaults.get('scale', 5.0), min_value=0.1, step=0.5, key=f"{prefix}_scale")
     return {'moda': mode, 'alpha': alpha, 'scale': scale}
 
+def render_altair_stretch(chart):
+    """Render helper to avoid inline nested calls and keep chart rendering syntax simple."""
+    st.altair_chart(chart, width="stretch")
+
 
 # =============================================================================
 # HEADER
@@ -242,31 +246,86 @@ st.info(
     f"Riesgo de pérdida: {format_percent(prob_loss)}."
 )
 
-if is_mc and df_mc is not None:
-    van_stats = df_mc['VAN'].describe(percentiles=[0.05, 0.95])
-    st.info(
-        "Con 90% de confianza, el VAN estará entre "
-        f"{format_currency(van_stats['5%'])} y {format_currency(van_stats['95%'])}."
-    )
-else:
-    st.info(
-        "Escenario base determinístico. Activá Monte Carlo para estimar el rango de resultados."
-    )
+# RESUMEN EJECUTIVO
 
 st.markdown("### Resumen Ejecutivo")
 st.caption("Síntesis del escenario con KPIs decisivos y gráficos esenciales.")
 
-st.markdown("### Flujos del Proyecto")
-st.caption("Lectura rápida: barras de ingresos/egresos y ticks del flujo neto mensual.")
+e1, e2, e3, e4, e5 = st.columns(5)
+e1.metric("VAN Mediana", format_currency(van_stats['50%']))
+e2.metric("VAN P05", format_currency(van_stats['5%']))
+e3.metric("VAN P95", format_currency(van_stats['95%']))
+e4.metric("Prob. Perdida", format_percent(prob_loss))
+e5.metric("Capital Trabajo", format_currency(metricas_base['MaxFinancingNeed']))
 
 st.markdown("#### Gráficos esenciales")
 flow_data = df_curvas if df_curvas is not None else df_base
-flow_chart = viz.crear_dashboard_detallado(
-    flow_data,
-    es_montecarlo=df_curvas is not None,
-    fin_obra=meses_obra[1],
-    break_even_month=metricas_base.get('BreakEvenMonth')
-), width="stretch")
+flow_chart = viz.crear_dashboard_detallado(df_mensual=flow_data, es_montecarlo=df_curvas is not None, fin_obra=meses_obra[1], break_even_month=metricas_base.get("BreakEvenMonth"))
+render_altair_stretch(flow_chart)
+
+chart_van, _ = viz.crear_graficos_montecarlo(df_mc)
+render_altair_stretch(chart_van)
+
+chart_sens_van, chart_sens_tir = viz.crear_matrices_sensibilidad(df_sens)
+render_altair_stretch(chart_sens_van)
+
+def _build_report_html(message: str, kpis: list, charts: list) -> str:
+    chart_sections = []
+    for idx, chart in enumerate(charts, start=1):
+        chart_id = f"chart_{idx}"
+        chart_json = json.dumps(chart.to_dict())
+        chart_sections.append(
+            f"""
+            <section>
+              <div id="{chart_id}"></div>
+              <script>
+                vegaEmbed("#{chart_id}", {chart_json}, {{actions: false}});
+              </script>
+            </section>
+            """
+        )
+
+    kpi_items = "".join(
+        f"<li><strong>{label}:</strong> {value}</li>" for label, value in kpis
+    )
+
+    return f"""
+    <!doctype html>
+    <html lang="es">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Reporte Ejecutivo</title>
+        <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+        <style>
+          body {{ font-family: Arial, sans-serif; margin: 24px; background: #0b0b0b; color: #f5f5f5; }}
+          h1, h2, h3 {{ color: #ffffff; }}
+          section {{ margin-bottom: 32px; }}
+          ul {{ padding-left: 18px; }}
+        </style>
+      </head>
+      <body>
+        <h1>Reporte Ejecutivo</h1>
+        <p>{message}</p>
+        <section>
+          <h2>KPIs decisivos</h2>
+          <ul>{kpi_items}</ul>
+        </section>
+        <section>
+          <h2>Gráficos esenciales</h2>
+          {''.join(chart_sections)}
+        </section>
+      </body>
+    </html>
+    """
+
+report_message = (
+    "Con 90% de confianza, el VAN estará entre "
+    f"{format_currency(van_stats['5%'])} y {format_currency(van_stats['95%'])}. "
+    f"Riesgo de pérdida: {format_percent(prob_loss)}."
+)
 
 report_kpis = [
     ("VAN Mediana", format_currency(van_stats['50%'])),
@@ -288,7 +347,7 @@ st.download_button(
 
 st.markdown("### Flujos del Proyecto")
 st.caption("Lectura rápida: barras de ingresos/egresos y ticks del flujo neto mensual.")
-st.altair_chart(flow_chart, width="stretch")
+render_altair_stretch(flow_chart)
 
 # SENSIBILIDAD
 
@@ -296,9 +355,9 @@ st.markdown("### Analisis de Sensibilidad")
     
 c1, c2 = st.columns(2)
 with c1:
-    st.altair_chart(chart_sens_van, width="stretch")
+    render_altair_stretch(chart_sens_van)
 with c2:
-    st.altair_chart(chart_sens_tir, width="stretch")
+    render_altair_stretch(chart_sens_tir)
 
 st.markdown("### Sensibilidad Rapida")
 col_a, col_b = st.columns(2)
@@ -325,24 +384,24 @@ st.write(
 
 # DEBUG / DATA
 
-if is_mc and df_mc is not None:
+if df_mc is not None:
     st.markdown("### Distribuciones (Monte Carlo)")
     chart_van, chart_tir = viz.crear_graficos_montecarlo(df_mc)
     c1, c2 = st.columns(2)
     with c1:
-        st.altair_chart(chart_van, width="stretch")
+        render_altair_stretch(chart_van)
     with c2:
-        st.altair_chart(chart_tir, width="stretch")
+        render_altair_stretch(chart_tir)
     
     chart_ventas, chart_costos = viz.crear_graficos_distribucion_montecarlo(df_mc)
     c3, c4 = st.columns(2)
     with c3:
-       st.altair_chart(chart_ventas, width="stretch")
+       render_altair_stretch(chart_ventas)
     with c4:
-       st.altair_chart(chart_costos, width="stretch")
+       render_altair_stretch(chart_costos)
 
 with st.expander("Bajo el Capo"):
-    if is_mc and df_mc is not None:
+    if df_mc is not None:
         st.markdown("#### Datos")
         st.dataframe(df_mc, width="stretch")
     else:
