@@ -316,17 +316,20 @@ def render_distribuciones(df_mc, chart_tir, chart_ventas, chart_costos, chart_se
         return
 
     st.markdown("### 6. Distribuciones (Monte Carlo)")
+    st.caption("Fila 1: resultado financiero del proyecto (VAN y TIR).")
     c1, c2 = st.columns(2)
     with c1:
-        render_altair_stretch(chart_tir)
+        render_altair_stretch(chart_van)
     with c2:
         render_altair_stretch(chart_ventas)
 
     c3, c4 = st.columns(2)
     with c3:
-        render_altair_stretch(chart_costos)
+        render_altair_stretch(chart_ventas)
     with c4:
-        render_altair_stretch(chart_sens_tir)
+        render_altair_stretch(chart_costos)
+
+    st.caption("Lectura sugerida: P05 es un escenario conservador, P50 la mediana esperada y P95 un escenario optimista para cada métrica.")
 
 
 def render_bajo_capot(
