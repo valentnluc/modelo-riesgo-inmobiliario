@@ -444,7 +444,7 @@ with st.spinner("Calculando sensibilidad..."):
             pasos=4,
         )
 
-    return {
+outputs = {
         "parametros_ventas": parametros_ventas,
         "parametros_costos": parametros_costos,
         "parametros_tierra": parametros_tierra,
