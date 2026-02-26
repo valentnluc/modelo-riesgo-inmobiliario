@@ -371,23 +371,44 @@ def render_escenarios(
             st.metric("Capital Trabajo", format_currency(metrics["MaxFinancingNeed"]))
 
 
-def render_distribuciones(df_mc, chart_tir, chart_ventas, chart_costos, chart_sens_tir) -> None:
-    if df_mc is None:
+def render_distribuciones(
+    df_mc,
+    *,
+    chart_van=None,
+    chart_tir=None,
+    chart_ventas=None,
+    chart_costos=None,
+    chart_sens_tir=None,
+) -> None:
+    if df_mc is None or getattr(df_mc, "empty", False):
         return
 
     st.markdown("### 6. Distribuciones (Monte Carlo)")
     st.caption("Fila 1: resultado financiero del proyecto (VAN y TIR).")
+
     c1, c2 = st.columns(2)
     with c1:
-        render_altair_stretch(chart_van)
+        if chart_van is not None:
+            render_altair_stretch(chart_van)
+        else:
+            st.info("Gráfico VAN no disponible en esta ejecución.")
     with c2:
-        render_altair_stretch(chart_ventas)
+        if chart_tir is not None:
+            render_altair_stretch(chart_tir)
+        else:
+            st.info("Gráfico TIR no disponible en esta ejecución.")
 
     c3, c4 = st.columns(2)
     with c3:
-        render_altair_stretch(chart_ventas)
+        if chart_ventas is not None:
+            render_altair_stretch(chart_ventas)
     with c4:
-        render_altair_stretch(chart_costos)
+        if chart_costos is not None:
+            render_altair_stretch(chart_costos)
+
+    if chart_sens_tir is not None:
+        st.markdown("#### Sensibilidad TIR")
+        render_altair_stretch(chart_sens_tir)
 
     st.caption("Lectura sugerida: P05 es un escenario conservador, P50 la mediana esperada y P95 un escenario optimista para cada métrica.")
 
@@ -457,7 +478,7 @@ def main() -> None:
     chart_ventas, chart_costos = viz.crear_graficos_distribucion_montecarlo(outputs["df_mc"])
 
     st.markdown("### 1-2. Evolución del Saldo (Riesgo) + Ingresos vs Egresos (Neto)")
-    st.caption("Incluye arriba Ingresos vs Egresos (Neto) y abajo la curva de saldo acumulado.")
+    st.caption("Incluye arriba la curva de saldo acumulado y abajo Ingresos vs Egresos (Neto).")
     render_altair_stretch(flow_chart)
 
     st.markdown("### 3. Distribución VAN")
@@ -474,7 +495,14 @@ def main() -> None:
         outputs["meses_obra"],
         parametros_mc["tasa_anual"],
     )
-    render_distribuciones(outputs["df_mc"], chart_tir, chart_ventas, chart_costos, chart_sens_tir)
+    render_distribuciones(
+        outputs["df_mc"],
+        chart_van=chart_van,
+        chart_tir=chart_tir,
+        chart_ventas=chart_ventas,
+        chart_costos=chart_costos,
+        chart_sens_tir=chart_sens_tir,
+    )
     render_bajo_capot(
         outputs["parametros_ventas"],
         outputs["parametros_costos"],
