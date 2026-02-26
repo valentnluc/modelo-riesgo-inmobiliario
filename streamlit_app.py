@@ -246,14 +246,18 @@ st.info(
 )
 
 flow_data = df_curvas if df_curvas is not None else df_base
-flow_chart = viz.crear_dashboard_detallado(
+
+chart_dashboard_detallado = viz.crear_dashboard_detallado(
     df_mensual=flow_data,
     es_montecarlo=df_curvas is not None,
     fin_obra=meses_obra[1],
     break_even_month=metricas_base.get("BreakEvenMonth")
 )
+chart_ingresos_egresos = chart_dashboard_detallado.vconcat[0]
+chart_saldo_riesgo = chart_dashboard_detallado.vconcat[1]
 
 chart_van, chart_tir = viz.crear_graficos_montecarlo(df_mc)
+chart_ventas_totales, chart_costos_totales = viz.crear_graficos_distribucion_montecarlo(df_mc)
 chart_sens_van, chart_sens_tir = viz.crear_matrices_sensibilidad(df_sens)
 
 # 1. Evolución del Saldo (Riesgo) + Ingresos vs Egresos (Neto)
@@ -270,7 +274,6 @@ st.markdown("### 4. Sensibilidad del VAN")
 st.caption("Cómo leer este bloque: cada punto representa una combinación de precio y costo; cuanto más alto y a la derecha, mejor desempeño financiero.")
 render_altair_stretch(chart_sens_van)
 
-# 4. Comparación de Escenarios
 st.markdown("### 5. Comparación de Escenarios")
 st.caption("Supuestos por escenario: Base (precio 100% / costo 100%), Pesimista (precio -10% / costo +10%) y Optimista (precio +10% / costo -10%).")
 escenarios = {
