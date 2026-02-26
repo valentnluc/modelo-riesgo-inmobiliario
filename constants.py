@@ -12,9 +12,9 @@ IRR_GUESS_BOUNDS = (-0.99, 10.0) # Límites para búsqueda de TIR
 
 COLORS = {
     # Colores principales
-    'primary': '#ff4b4b',      # Rojo Streamlit
-    'secondary': '#0068c9',    # Azul
-    'tertiary': '#83c9ff',     # Azul claro
+    'primary': '#ef442e',      # Rojo unificado
+    'secondary': '#295bac',    # Azul unificado
+    'tertiary': '#5f87cd',     # Azul claro derivado
     'quaternary': '#29b09d',   # Verde teal
     
     # Grises para UI
@@ -26,7 +26,7 @@ COLORS = {
     'background_alt': '#f0f2f6',
     
     # Alias
-    'brand': '#0068c9',        # Alias - para compatibilidad viz.py (Blue)
+    'brand': '#295bac',        # Alias - para compatibilidad viz.py (Blue)
 }
 
 # Alias para gráficos de flujos
