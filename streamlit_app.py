@@ -4,7 +4,6 @@ Modelo de Riesgo Inmobiliario - Aplicación Streamlit.
 Vista unificada con misma estructura para determinístico y Monte Carlo.
 """
 
-import json
 import streamlit as st
 import model
 import viz
@@ -226,7 +225,7 @@ with st.spinner("Calculando sensibilidad..."):
 
 # KPIs
 
-st.markdown("### Metricas Clave")
+st.markdown("### 0. Metricas clave")
 
 van_stats = df_mc['VAN'].describe(percentiles=[0.05, 0.5, 0.95])
 prob_loss = (df_mc['VAN'] < 0).mean()
@@ -246,175 +245,40 @@ st.info(
     f"Riesgo de pérdida: {format_percent(prob_loss)}."
 )
 
-# RESUMEN EJECUTIVO
-
-st.markdown("### Resumen Ejecutivo")
-st.caption("Síntesis del escenario con KPIs decisivos y gráficos esenciales.")
-
-e1, e2, e3, e4, e5 = st.columns(5)
-e1.metric("VAN Mediana", format_currency(van_stats['50%']))
-e2.metric("VAN P05", format_currency(van_stats['5%']))
-e3.metric("VAN P95", format_currency(van_stats['95%']))
-e4.metric("Prob. Perdida", format_percent(prob_loss))
-e5.metric("Capital Trabajo", format_currency(metricas_base['MaxFinancingNeed']))
-
-st.markdown("#### Gráficos esenciales")
 flow_data = df_curvas if df_curvas is not None else df_base
-flow_chart = viz.crear_dashboard_detallado(df_mensual=flow_data, es_montecarlo=df_curvas is not None, fin_obra=meses_obra[1], break_even_month=metricas_base.get("BreakEvenMonth"))
+flow_chart = viz.crear_dashboard_detallado(
+    df_mensual=flow_data,
+    es_montecarlo=df_curvas is not None,
+    fin_obra=meses_obra[1],
+    break_even_month=metricas_base.get("BreakEvenMonth")
+)
+
+chart_van, chart_tir = viz.crear_graficos_montecarlo(df_mc)
+chart_sens_van, chart_sens_tir = viz.crear_matrices_sensibilidad(df_sens)
+
+# 1. Evolución del Saldo (Riesgo) + Ingresos vs Egresos (Neto)
+st.markdown("### 1-2. Evolución del Saldo (Riesgo) + Ingresos vs Egresos (Neto)")
+st.caption("Incluye arriba Ingresos vs Egresos (Neto) y abajo la curva de saldo acumulado.")
 render_altair_stretch(flow_chart)
 
-chart_van, _ = viz.crear_graficos_montecarlo(df_mc)
+# 2. Distribución VAN
+st.markdown("### 3. Distribución VAN")
 render_altair_stretch(chart_van)
 
-chart_sens_van, chart_sens_tir = viz.crear_matrices_sensibilidad(df_sens)
+# 3. Sensibilidad VAN (Bubbles)
+st.markdown("### 4. Sensibilidad VAN (Bubbles)")
 render_altair_stretch(chart_sens_van)
 
-def _build_report_html(message: str, kpis: list, charts: list) -> str:
-    chart_sections = []
-    for idx, chart in enumerate(charts, start=1):
-        chart_id = f"chart_{idx}"
-        chart_json = json.dumps(chart.to_dict())
-        chart_sections.append(
-            f"""
-            <section>
-              <div id="{chart_id}"></div>
-              <script>
-                vegaEmbed("#{chart_id}", {chart_json}, {{actions: false}});
-              </script>
-            </section>
-            """
-        )
-
-    kpi_items = "".join(
-        f"<li><strong>{label}:</strong> {value}</li>" for label, value in kpis
-    )
-
-    return f"""
-    <!doctype html>
-    <html lang="es">
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Reporte Ejecutivo</title>
-        <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
-        <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
-        <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
-        <style>
-          body {{ font-family: Arial, sans-serif; margin: 24px; background: #0b0b0b; color: #f5f5f5; }}
-          h1, h2, h3 {{ color: #ffffff; }}
-          section {{ margin-bottom: 32px; }}
-          ul {{ padding-left: 18px; }}
-        </style>
-      </head>
-      <body>
-        <h1>Reporte Ejecutivo</h1>
-        <p>{message}</p>
-        <section>
-          <h2>KPIs decisivos</h2>
-          <ul>{kpi_items}</ul>
-        </section>
-        <section>
-          <h2>Gráficos esenciales</h2>
-          {''.join(chart_sections)}
-        </section>
-      </body>
-    </html>
-    """
-
-report_message = (
-    "Con 90% de confianza, el VAN estará entre "
-    f"{format_currency(van_stats['5%'])} y {format_currency(van_stats['95%'])}. "
-    f"Riesgo de pérdida: {format_percent(prob_loss)}."
-)
-
-report_kpis = [
-    ("VAN Mediana", format_currency(van_stats['50%'])),
-    ("VAN P05", format_currency(van_stats['5%'])),
-    ("VAN P95", format_currency(van_stats['95%'])),
-    ("Prob. Perdida", format_percent(prob_loss)),
-    ("Capital Trabajo", format_currency(metricas_base['MaxFinancingNeed'])),
-]
-
-report_html = _build_report_html(report_message, report_kpis, [flow_chart, chart_van, chart_sens_van])
-st.download_button(
-    "Descargar reporte ejecutivo (HTML)",
-    data=report_html,
-    file_name="reporte-ejecutivo.html",
-    mime="text/html"
-)
-
-# GRÁFICOS FRONTAJES
-
-st.markdown("### Flujos del Proyecto")
-st.caption("Lectura rápida: barras de ingresos/egresos y ticks del flujo neto mensual.")
-render_altair_stretch(flow_chart)
-
-# SENSIBILIDAD
-
-st.markdown("### Analisis de Sensibilidad")
-    
-c1, c2 = st.columns(2)
-with c1:
-    render_altair_stretch(chart_sens_van)
-with c2:
-    render_altair_stretch(chart_sens_tir)
-
-st.markdown("### Sensibilidad Rapida")
-col_a, col_b = st.columns(2)
-with col_a:
-    precio_factor = st.slider("Precio vs Base", 0.7, 1.3, 1.0, 0.05, format="%.2f")
-with col_b:
-    costo_factor = st.slider("Costo vs Base", 0.7, 1.3, 1.0, 0.05, format="%.2f")
-
-params_ventas_sens = parametros_ventas.copy()
-params_costos_sens = parametros_costos.copy()
-params_ventas_sens['area_n'] = params_ventas_sens.get('area_n', 0) * precio_factor
-params_costos_sens['limite_n'] = params_costos_sens.get('limite_n', 0) * costo_factor
-
-df_sens_base, metricas_sens = model.ejecutar_deterministico(
-    params_ventas_sens, params_costos_sens, parametros_tierra,
-    meses_totales=meses_totales, meses_obra=meses_obra, tasa_anual=tasa_anual
-)
-st.caption("Ajuste rápido de precio y costo sobre el escenario base.")
-st.write(
-    f"VAN: {format_currency(metricas_sens['VAN'])} | "
-    f"TIR: {format_percent(metricas_sens['TIR'])} | "
-    f"Capital Trabajo: {format_currency(metricas_sens['MaxFinancingNeed'])}"
-)
-
-# DEBUG / DATA
-
-if df_mc is not None:
-    st.markdown("### Distribuciones (Monte Carlo)")
-    chart_van, chart_tir = viz.crear_graficos_montecarlo(df_mc)
-    c1, c2 = st.columns(2)
-    with c1:
-        render_altair_stretch(chart_van)
-    with c2:
-        render_altair_stretch(chart_tir)
-    
-    chart_ventas, chart_costos = viz.crear_graficos_distribucion_montecarlo(df_mc)
-    c3, c4 = st.columns(2)
-    with c3:
-       render_altair_stretch(chart_ventas)
-    with c4:
-       render_altair_stretch(chart_costos)
-
-with st.expander("Bajo el Capo"):
-    if df_mc is not None:
-        st.markdown("#### Datos")
-        st.dataframe(df_mc, width="stretch")
-    else:
-        st.dataframe(df_base, width="stretch")
-
-st.markdown("### Comparación de Escenarios")
+# 4. Comparación de Escenarios
+st.markdown("### 5. Comparación de Escenarios")
+st.caption("Supuestos por escenario: Base (precio 100% / costo 100%), Pesimista (precio -10% / costo +10%), Optimista (precio +10% / costo -10%).")
 escenarios = {
-    "Base": (1.0, 1.0),
-    "Pesimista": (0.9, 1.1),
-    "Optimista": (1.1, 0.9)
+    "Base": (1.0, 1.0, "Precio = base | Costo = base"),
+    "Pesimista": (0.9, 1.1, "Precio -10% | Costo +10%"),
+    "Optimista": (1.1, 0.9, "Precio +10% | Costo -10%")
 }
 cols = st.columns(3)
-for col, (label, (f_precio, f_costo)) in zip(cols, escenarios.items()):
+for col, (label, (f_precio, f_costo, detalle)) in zip(cols, escenarios.items()):
     params_ventas = parametros_ventas.copy()
     params_costos = parametros_costos.copy()
     params_ventas['area_n'] = params_ventas.get('area_n', 0) * f_precio
@@ -425,6 +289,54 @@ for col, (label, (f_precio, f_costo)) in zip(cols, escenarios.items()):
     )
     with col:
         st.subheader(label)
+        st.caption(detalle)
         st.metric("VAN", format_currency(metrics['VAN']))
         st.metric("TIR", format_percent(metrics['TIR']))
         st.metric("Capital Trabajo", format_currency(metrics['MaxFinancingNeed']))
+
+# 5. Distribuciones (Monte Carlo)
+if df_mc is not None:
+    st.markdown("### 6. Distribuciones (Monte Carlo)")
+    c1, c2 = st.columns(2)
+    with c1:
+        render_altair_stretch(chart_tir)
+    with c2:
+        chart_ventas, chart_costos = viz.crear_graficos_distribucion_montecarlo(df_mc)
+        render_altair_stretch(chart_ventas)
+    c3, c4 = st.columns(2)
+    with c3:
+        render_altair_stretch(chart_costos)
+    with c4:
+        render_altair_stretch(chart_sens_tir)
+
+# 7. Bajo el capot
+st.markdown("### 7. Bajo el capot")
+with st.expander("Bajo el capot"):
+    st.markdown("#### Sensibilidad rápida")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        precio_factor = st.slider("Precio vs Base", 0.7, 1.3, 1.0, 0.05, format="%.2f")
+    with col_b:
+        costo_factor = st.slider("Costo vs Base", 0.7, 1.3, 1.0, 0.05, format="%.2f")
+
+    params_ventas_sens = parametros_ventas.copy()
+    params_costos_sens = parametros_costos.copy()
+    params_ventas_sens['area_n'] = params_ventas_sens.get('area_n', 0) * precio_factor
+    params_costos_sens['limite_n'] = params_costos_sens.get('limite_n', 0) * costo_factor
+
+    _, metricas_sens = model.ejecutar_deterministico(
+        params_ventas_sens, params_costos_sens, parametros_tierra,
+        meses_totales=meses_totales, meses_obra=meses_obra, tasa_anual=tasa_anual
+    )
+    st.caption("Ajuste rápido de precio y costo sobre el escenario base.")
+    st.write(
+        f"VAN: {format_currency(metricas_sens['VAN'])} | "
+        f"TIR: {format_percent(metricas_sens['TIR'])} | "
+        f"Capital Trabajo: {format_currency(metricas_sens['MaxFinancingNeed'])}"
+    )
+
+    st.markdown("#### Datos")
+    if df_mc is not None:
+        st.dataframe(df_mc, width="stretch")
+    else:
+        st.dataframe(df_base, width="stretch")

@@ -37,7 +37,7 @@ def core_infra_theme():
             },
             'view': {'stroke': '#1F1F1F'},
             'range': {
-                'category': ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899']
+                'category': [COLOR_INCOME, COLOR_EXPENSE, '#10B981', '#F59E0B', '#8B5CF6', '#EC4899']
             }
         }
     }
@@ -608,7 +608,7 @@ def crear_dashboard_detallado(
     
     bars = base_flow.mark_bar(cornerRadius=4, opacity=0.8, width=15).encode(
         y=alt.Y('Monto:Q', title='Flujo Mensual', axis=alt.Axis(format='~s')),
-        color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Ingresos', 'Egresos'], range=['#3B82F6', '#EF4444']), legend=None),
+        color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Ingresos', 'Egresos'], range=[COLOR_INCOME, COLOR_EXPENSE]), legend=None),
         tooltip=['Mes_Int', 'Tipo', alt.Tooltip('Monto', format='~s')]
     )
     top_layers.append(bars)
@@ -620,14 +620,14 @@ def crear_dashboard_detallado(
         stats_flow['Egresos_P95_Neg'] = -stats_flow['Egresos_P95']
         
         # 1. Ingresos CI (Azul Oscuro)
-        ci_ing_rule = alt.Chart(stats_flow).mark_rule(color='#172554', opacity=0.8, strokeWidth=2).encode(
+        ci_ing_rule = alt.Chart(stats_flow).mark_rule(color=COLOR_INCOME, opacity=0.7, strokeWidth=2).encode(
             x='Mes_Int:Q', y='Ingresos_P05:Q', y2='Ingresos_P95:Q'
         )
         # ci_ing_p05 y p95 eliminados para reducir ruido visual
         top_layers.append(ci_ing_rule)
         
         # 2. Egresos CI (Rojo Oscuro) - Invertidos
-        ci_egr_rule = alt.Chart(stats_flow).mark_rule(color='#7F1D1D', opacity=0.8, strokeWidth=2).encode(
+        ci_egr_rule = alt.Chart(stats_flow).mark_rule(color=COLOR_EXPENSE, opacity=0.7, strokeWidth=2).encode(
             x='Mes_Int:Q', y='Egresos_P05_Neg:Q', y2='Egresos_P95_Neg:Q'
         )
         # ci_egr_p05 y p95 eliminados para reducir ruido visual
@@ -761,8 +761,8 @@ def crear_matrices_sensibilidad(df_sens: pd.DataFrame) -> alt.HConcatChart:
             size=alt.Size(f'{abs_col}:Q', legend=None, scale=alt.Scale(range=[100, 1000])), # Rango de tamaños visuales
             color=alt.condition(
                 alt.datum[metric] >= 0,
-                alt.value('#3B82F6'), # Blue
-                alt.value('#EF4444')  # Red
+                alt.value(COLOR_INCOME), # Blue
+                alt.value(COLOR_EXPENSE)  # Red
             ),
             tooltip=[
                 alt.Tooltip('Variacion_Precio:Q', format='+.0%', title='Precio'),
@@ -813,7 +813,7 @@ def _crear_histograma(df: pd.DataFrame, column: str, title: str,
     p95 = data.quantile(0.95)
     
     # Histograma - Barras Azules por defecto (Estilo FT)
-    hist = alt.Chart(df).mark_bar(color='#3B82F6', opacity=0.8).encode(
+    hist = alt.Chart(df).mark_bar(color=color, opacity=0.8).encode(
         x=alt.X(f'{column}:Q', bin=alt.Bin(maxbins=30), title=title,
                axis=alt.Axis(format='~s' if 'VAN' in column or 'Venta' in column or 'Costo' in column else '.1%')),
         y=alt.Y('count()', title='Frecuencia')
@@ -821,9 +821,9 @@ def _crear_histograma(df: pd.DataFrame, column: str, title: str,
     
     # Líneas de percentiles
     df_lines = pd.DataFrame([
-        {'x': p05, 'label': 'P05', 'pct': 'P05', 'color': '#EF4444'}, # Rojo (Pesimista)
+        {'x': p05, 'label': 'P05', 'pct': 'P05', 'color': COLOR_EXPENSE}, # Rojo (Pesimista)
         {'x': p50, 'label': 'Mediana', 'pct': 'P50', 'color': 'white'}, # Blanco (Central)
-        {'x': p95, 'label': 'P95', 'pct': 'P95', 'color': '#3B82F6'}  # Azul (Optimista)
+        {'x': p95, 'label': 'P95', 'pct': 'P95', 'color': COLOR_INCOME}  # Azul (Optimista)
     ])
     
     rules = alt.Chart(df_lines).mark_rule(
@@ -866,12 +866,12 @@ def crear_graficos_montecarlo(df_mc: pd.DataFrame) -> Tuple[alt.Chart, alt.Chart
     # Usar Azul consistente para métricas de valor
     chart_van = _crear_histograma(
         df_mc, 'VAN', 'Distribución VAN', 
-        '#3B82F6', format_currency
+        COLOR_INCOME, format_currency
     )
     
     chart_tir = _crear_histograma(
         df_mc.dropna(subset=['TIR']), 'TIR', 'Distribución TIR',
-        '#3B82F6', format_percent
+        COLOR_INCOME, format_percent
     )
     
     return chart_van, chart_tir
