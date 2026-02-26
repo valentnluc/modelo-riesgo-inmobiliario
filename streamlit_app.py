@@ -225,7 +225,7 @@ with st.spinner("Calculando sensibilidad..."):
 
 # KPIs
 
-st.markdown("### 0. Metricas clave")
+st.markdown("### 1. Metricas Clave")
 
 van_stats = df_mc['VAN'].describe(percentiles=[0.05, 0.5, 0.95])
 prob_loss = (df_mc['VAN'] < 0).mean()
@@ -246,30 +246,34 @@ st.info(
 )
 
 flow_data = df_curvas if df_curvas is not None else df_base
-flow_chart = viz.crear_dashboard_detallado(
+
+chart_dashboard_detallado = viz.crear_dashboard_detallado(
     df_mensual=flow_data,
     es_montecarlo=df_curvas is not None,
     fin_obra=meses_obra[1],
     break_even_month=metricas_base.get("BreakEvenMonth")
 )
+chart_ingresos_egresos = chart_dashboard_detallado.vconcat[0]
+chart_saldo_riesgo = chart_dashboard_detallado.vconcat[1]
 
 chart_van, chart_tir = viz.crear_graficos_montecarlo(df_mc)
+chart_ventas_totales, chart_costos_totales = viz.crear_graficos_distribucion_montecarlo(df_mc)
 chart_sens_van, chart_sens_tir = viz.crear_matrices_sensibilidad(df_sens)
 
-# 1. Evolución del Saldo (Riesgo) + Ingresos vs Egresos (Neto)
-st.markdown("### 1-2. Evolución del Saldo (Riesgo) + Ingresos vs Egresos (Neto)")
-st.caption("Incluye arriba Ingresos vs Egresos (Neto) y abajo la curva de saldo acumulado.")
-render_altair_stretch(flow_chart)
+# BLOQUE PRINCIPAL DE RENDER (orden único y fijo)
+st.markdown("### 2. Evolución del Saldo (Riesgo)")
+render_altair_stretch(chart_saldo_riesgo)
 
-# 2. Distribución VAN
-st.markdown("### 3. Distribución VAN")
-render_altair_stretch(chart_van)
+st.markdown("### 3. Ingresos vs Egresos (Neto)")
+render_altair_stretch(chart_ingresos_egresos)
 
-# 3. Sensibilidad VAN (Bubbles)
 st.markdown("### 4. Sensibilidad VAN (Bubbles)")
-render_altair_stretch(chart_sens_van)
+col_s1, col_s2 = st.columns(2)
+with col_s1:
+    render_altair_stretch(chart_sens_van)
+with col_s2:
+    render_altair_stretch(chart_sens_tir)
 
-# 4. Comparación de Escenarios
 st.markdown("### 5. Comparación de Escenarios")
 st.caption("Supuestos por escenario: Base (precio 100% / costo 100%), Pesimista (precio -10% / costo +10%), Optimista (precio +10% / costo -10%).")
 escenarios = {
@@ -294,20 +298,17 @@ for col, (label, (f_precio, f_costo, detalle)) in zip(cols, escenarios.items()):
         st.metric("TIR", format_percent(metrics['TIR']))
         st.metric("Capital Trabajo", format_currency(metrics['MaxFinancingNeed']))
 
-# 5. Distribuciones (Monte Carlo)
-if df_mc is not None:
-    st.markdown("### 6. Distribuciones (Monte Carlo)")
-    c1, c2 = st.columns(2)
-    with c1:
-        render_altair_stretch(chart_tir)
-    with c2:
-        chart_ventas, chart_costos = viz.crear_graficos_distribucion_montecarlo(df_mc)
-        render_altair_stretch(chart_ventas)
-    c3, c4 = st.columns(2)
-    with c3:
-        render_altair_stretch(chart_costos)
-    with c4:
-        render_altair_stretch(chart_sens_tir)
+st.markdown("### 6. Distribuciones (Monte Carlo)")
+c1, c2 = st.columns(2)
+with c1:
+    render_altair_stretch(chart_van)
+with c2:
+    render_altair_stretch(chart_tir)
+c3, c4 = st.columns(2)
+with c3:
+    render_altair_stretch(chart_ventas_totales)
+with c4:
+    render_altair_stretch(chart_costos_totales)
 
 # 7. Bajo el capot
 st.markdown("### 7. Bajo el capot")
