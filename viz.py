@@ -6,6 +6,7 @@ import altair as alt
 
 from constants import (
     COLORS, COLOR_INCOME, COLOR_EXPENSE, COLOR_NET, COLOR_ACCUM,
+    COLOR_WARNING, COLOR_SUCCESS, COLOR_REFERENCE, COLOR_EXPENSE_SOFT,
     CHART_CONFIG, CHART_WIDTH, CHART_HEIGHT_MAIN, CHART_HEIGHT_SMALL,
     format_currency
 )
@@ -162,7 +163,7 @@ def get_unified_flow_chart(
     layers.append(line)
     
     # Barras de tierra
-    tierra_bars = alt.Chart(stats_tierra).mark_bar(color='#ff8080', opacity=0.4).encode(
+    tierra_bars = alt.Chart(stats_tierra).mark_bar(color=COLOR_EXPENSE_SOFT, opacity=0.4).encode(
         x='Mes_Int:O',
         y=alt.Y('Egresos_Tierra:Q', axis=alt.Axis(format='~s'))
     )
@@ -170,7 +171,7 @@ def get_unified_flow_chart(
     
     # Línea de flujo neto (blanco punteado, puntos pequeños)
     line_neto = alt.Chart(stats['Flujo_Neto']).mark_line(
-        color='white', strokeWidth=3, strokeDash=[4, 2], point=alt.OverlayMarkDef(size=12, color='white')
+        color=COLOR_REFERENCE, strokeWidth=3, strokeDash=[4, 2], point=alt.OverlayMarkDef(size=12, color=COLOR_REFERENCE)
     ).encode(
         x='Mes_Int:O',
         y='P50:Q'
@@ -182,9 +183,9 @@ def get_unified_flow_chart(
         max_m = stats['Ventas']['Mes_Int'].max()
         if construction_end <= max_m:
             df_const = pd.DataFrame([{'x': construction_end}])
-            line_const = alt.Chart(df_const).mark_rule(color='#ffaa00', strokeWidth=2, strokeDash=[6, 4]).encode(x='x:O')
+            line_const = alt.Chart(df_const).mark_rule(color=COLOR_WARNING, strokeWidth=2, strokeDash=[6, 4]).encode(x='x:O')
             label_const = alt.Chart(df_const).mark_text(
-                align='center', dy=-10, fontSize=9, color='#ffaa00', fontWeight='bold'
+                align='center', dy=-10, fontSize=9, color=COLOR_WARNING, fontWeight='bold'
             ).encode(x='x:O', y=alt.value(0), text=alt.value('Fin Obra'))
             layers.extend([line_const, label_const])
     
@@ -276,9 +277,9 @@ def get_unified_balance_chart(
     # Línea de fin de obra
     if construction_end is not None:
         df_const = pd.DataFrame([{'x': construction_end}])
-        line_const = alt.Chart(df_const).mark_rule(color='#ffaa00', strokeWidth=2, strokeDash=[6, 4]).encode(x='x:O')
+        line_const = alt.Chart(df_const).mark_rule(color=COLOR_WARNING, strokeWidth=2, strokeDash=[6, 4]).encode(x='x:O')
         label_const = alt.Chart(df_const).mark_text(
-            align='center', dy=-10, fontSize=9, color='#ffaa00', fontWeight='bold'
+            align='center', dy=-10, fontSize=9, color=COLOR_WARNING, fontWeight='bold'
         ).encode(x='x:O', y=alt.value(0), text=alt.value('Fin Obra'))
         layers.extend([line_const, label_const])
     
@@ -290,9 +291,9 @@ def get_unified_balance_chart(
         else:
             be_val = 0
         df_be = pd.DataFrame([{'Mes_Int': be_mes, 'P50': be_val}])
-        point_be = alt.Chart(df_be).mark_circle(size=80, color='#00ff88').encode(x='Mes_Int:O', y='P50:Q')
+        point_be = alt.Chart(df_be).mark_circle(size=80, color=COLOR_SUCCESS).encode(x='Mes_Int:O', y='P50:Q')
         label_be = alt.Chart(df_be).mark_text(
-            align='left', dx=8, dy=5, fontSize=10, fontWeight='bold', color='#00ff88'
+            align='left', dx=8, dy=5, fontSize=10, fontWeight='bold', color=COLOR_SUCCESS
         ).encode(x='Mes_Int:O', y='P50:Q', text=alt.value('Break-Even'))
         layers.extend([point_be, label_be])
     
@@ -515,7 +516,7 @@ def get_cashflow_chart(
         height=100# Más compacto
     )
     
-    return alt.vconcat(top_chart, bottom_chart).resolve_scale(x='shared')
+    return alt.vconcat(bottom_chart, top_chart).resolve_scale(x='shared')
 
 
 def crear_dashboard_detallado(
@@ -526,7 +527,7 @@ def crear_dashboard_detallado(
     break_even_month: Optional[float] = None
 ) -> alt.VConcatChart:
     """
-    Dashboard detallado: Flujos mensuales (arriba) y Balance acumulado (abajo).
+    Dashboard detallado: Balance acumulado (arriba) y flujos mensuales (abajo).
     """
     df = df_mensual.copy()
     max_month = int(df['Mes'].max())
@@ -576,16 +577,17 @@ def crear_dashboard_detallado(
         stats_balance = df_all.groupby('Mes_Int')['Cash_Acumulado'].quantile([0.05, 0.5, 0.95]).unstack()
         stats_balance.columns = ['P05', 'P50', 'P95']
         stats_balance = stats_balance.reset_index()
-        
-        # Estadísticas para Flujos
-        stats_flow_median = df_all.groupby('Mes_Int')[['Ingresos', 'Egresos', 'Flujo_Neto']].median().reset_index()
-        
-        # CI para Ingresos y Egresos (Whiskers) + Flujo Neto (Area)
-        stats_flow_ci = df_all.groupby('Mes_Int')[['Ingresos', 'Egresos', 'Flujo_Neto']].quantile([0.05, 0.95]).unstack()
+
+        # Estadísticas para Flujos (reutilizando el mismo groupby)
+        grouped_flow = df_all.groupby('Mes_Int')[['Ingresos', 'Egresos', 'Flujo_Neto']]
+        stats_flow_median = grouped_flow.median()
+
+        # CI para Ingresos y Egresos (Whiskers) + Flujo Neto
+        stats_flow_ci = grouped_flow.quantile([0.05, 0.95]).unstack()
         stats_flow_ci.columns = ['Ingresos_P05', 'Ingresos_P95', 'Egresos_P05', 'Egresos_P95', 'Flow_P05', 'Flow_P95']
-        
-        # Merge de todo
-        stats_flow = pd.merge(stats_flow_median, stats_flow_ci, on='Mes_Int')
+
+        # Join por índice para evitar merges/reindex innecesarios
+        stats_flow = stats_flow_median.join(stats_flow_ci).reset_index()
         
     else:
         # Determinístico
@@ -595,7 +597,7 @@ def crear_dashboard_detallado(
             'P50': stats_flow['Cash_Acumulado'] 
         })
 
-    # --- GRÁFICO 1: FLUJOS MENSUALES (Arriba) ---
+    # --- GRÁFICO 1: FLUJOS MENSUALES (Abajo) ---
     
     # Preparar datos tidy para barras
     df_bars = pd.melt(stats_flow, id_vars=['Mes_Int'], value_vars=['Ingresos', 'Egresos'], var_name='Tipo', value_name='Monto')
@@ -615,33 +617,34 @@ def crear_dashboard_detallado(
     
     # Intervalo de Confianza (Whiskers)
     if es_montecarlo and 'Ingresos_P05' in stats_flow.columns:
-        # Calcular columnas neg para Egresos
-        stats_flow['Egresos_P05_Neg'] = -stats_flow['Egresos_P05']
-        stats_flow['Egresos_P95_Neg'] = -stats_flow['Egresos_P95']
-        
+        ci_flow = stats_flow.assign(
+            Egresos_P05_Neg=-stats_flow['Egresos_P05'],
+            Egresos_P95_Neg=-stats_flow['Egresos_P95'],
+        )
+
         # 1. Ingresos CI (Azul Oscuro)
-        ci_ing_rule = alt.Chart(stats_flow).mark_rule(color=COLOR_INCOME, opacity=0.7, strokeWidth=2).encode(
+        ci_ing_rule = alt.Chart(ci_flow).mark_rule(color=COLOR_INCOME, opacity=0.7, strokeWidth=2).encode(
             x='Mes_Int:Q', y='Ingresos_P05:Q', y2='Ingresos_P95:Q'
         )
         # ci_ing_p05 y p95 eliminados para reducir ruido visual
         top_layers.append(ci_ing_rule)
-        
+
         # 2. Egresos CI (Rojo Oscuro) - Invertidos
-        ci_egr_rule = alt.Chart(stats_flow).mark_rule(color=COLOR_EXPENSE, opacity=0.7, strokeWidth=2).encode(
+        ci_egr_rule = alt.Chart(ci_flow).mark_rule(color=COLOR_EXPENSE, opacity=0.7, strokeWidth=2).encode(
             x='Mes_Int:Q', y='Egresos_P05_Neg:Q', y2='Egresos_P95_Neg:Q'
         )
         # ci_egr_p05 y p95 eliminados para reducir ruido visual
         top_layers.append(ci_egr_rule)
         
         # 3. Flujo Neto CI (Lineas Verticales Blancas) - Petición de usuario
-        if 'Flow_P05' in stats_flow.columns:
-            ci_net_flow = alt.Chart(stats_flow).mark_rule(color='white', opacity=0.4, strokeWidth=2).encode(
+        if 'Flow_P05' in ci_flow.columns:
+            ci_net_flow = alt.Chart(ci_flow).mark_rule(color='white', opacity=0.4, strokeWidth=2).encode(
                 x='Mes_Int:Q', y='Flow_P05:Q', y2='Flow_P95:Q'
             )
             top_layers.append(ci_net_flow)
 
     # Ticks de Flujo Neto (Blanco)
-    ticks_net = alt.Chart(stats_flow).mark_tick(thickness=2, size=12, opacity=0.9, color='white', orient='horizontal').encode(
+    ticks_net = alt.Chart(stats_flow).mark_tick(thickness=2, size=12, opacity=0.9, color=COLOR_REFERENCE, orient='horizontal').encode(
         x='Mes_Int:Q',
         y='Flujo_Neto:Q',
         tooltip=['Mes_Int', alt.Tooltip('Flujo_Neto', format='~s')]
@@ -660,7 +663,7 @@ def crear_dashboard_detallado(
         height=CHART_HEIGHT_MAIN
     )
 
-    # --- GRÁFICO 2: BALANCE ACUMULADO (Abajo) ---
+    # --- GRÁFICO 2: BALANCE ACUMULADO (Arriba) ---
     
     bottom_layers = []
     
@@ -668,14 +671,14 @@ def crear_dashboard_detallado(
     
     if es_montecarlo and 'P05' in stats_balance.columns:
         # Fan Chart
-        band_ci = base_bal.mark_area(opacity=0.3, color='white').encode(
+        band_ci = base_bal.mark_area(opacity=0.3, color=COLOR_REFERENCE).encode(
             y='P05:Q',
             y2='P95:Q'
         )
         bottom_layers.append(band_ci)
         
     # Línea Mediana
-    line_main = base_bal.mark_line(color='white', strokeWidth=3).encode(
+    line_main = base_bal.mark_line(color=COLOR_REFERENCE, strokeWidth=3).encode(
         y=alt.Y('P50:Q', title='Balance Acumulado', axis=alt.Axis(format='~s')),
         tooltip=[alt.Tooltip('P50', title='Balance', format='~s')]
     )
@@ -692,11 +695,11 @@ def crear_dashboard_detallado(
     # Peak Exposure
     if min_val < 0:
         df_min = stats_balance.loc[[min_idx]]
-        pt_min = alt.Chart(df_min).mark_circle(size=100, color='#EF4444', opacity=1).encode(
+        pt_min = alt.Chart(df_min).mark_circle(size=100, color=COLOR_EXPENSE, opacity=1).encode(
             x='Mes_Int:Q', y='P50:Q', tooltip=[alt.Tooltip('P50', title='Capital Trabajo', format='~s')]
         )
         # Etiqueta
-        txt_min = alt.Chart(df_min).mark_text(align='center', dy=20, fontSize=11, color='#EF4444', fontStyle='italic').encode(
+        txt_min = alt.Chart(df_min).mark_text(align='center', dy=20, fontSize=11, color=COLOR_EXPENSE, fontStyle='italic').encode(
             x='Mes_Int:Q', y='P50:Q', text=alt.Text('P50', format='~s')
         )
         bottom_layers.extend([pt_min, txt_min])
@@ -704,7 +707,7 @@ def crear_dashboard_detallado(
     if break_even_month and break_even_month > 0:
         # Break Even EXACTO en Y=0
         df_be = pd.DataFrame([{'Mes_Int': break_even_month, 'P50': 0}])
-        pt_be = alt.Chart(df_be).mark_circle(size=100, color='#10B981', opacity=1).encode(
+        pt_be = alt.Chart(df_be).mark_circle(size=100, color=COLOR_SUCCESS, opacity=1).encode(
             x=alt.X('Mes_Int:Q', title='Mes'), 
             y='P50:Q', 
             tooltip=[alt.Tooltip('Mes_Int', title='Mes Break Even', format='.1f')]
@@ -723,7 +726,7 @@ def crear_dashboard_detallado(
         height=200
     )
     
-    return alt.vconcat(top_chart, bottom_chart).resolve_scale(x='shared')
+    return alt.vconcat(bottom_chart, top_chart).resolve_scale(x='shared')
 
 
 # =============================================================================
@@ -801,41 +804,53 @@ def get_sensitivity_heatmap(df_sens: pd.DataFrame, metric: str = 'VAN') -> alt.C
 # GRÁFICOS MONTE CARLO
 # =============================================================================
 
-def _crear_histograma(df: pd.DataFrame, column: str, title: str, 
+def _crear_histograma(df: pd.DataFrame, column: str, title: str,
                       color: str, format_fn, subtitle: str = None) -> alt.Chart:
-    """Helper para crear histogramas con percentiles."""
+    """Helper para crear histogramas con percentiles y estilo consistente."""
     data = df[column].dropna()
     if len(data) == 0:
         return alt.Chart(pd.DataFrame()).mark_text(text='Sin datos')
-    
+
     p05 = data.quantile(0.05)
     p50 = data.quantile(0.5)
     p95 = data.quantile(0.95)
-    
-    # Histograma - Barras Azules por defecto (Estilo FT)
+
+    is_pct = column == 'TIR'
+    value_format = '.1%' if is_pct else '~s'
+
     hist = alt.Chart(df).mark_bar(color=color, opacity=0.8).encode(
-        x=alt.X(f'{column}:Q', bin=alt.Bin(maxbins=30), title=title,
-               axis=alt.Axis(format='~s' if 'VAN' in column or 'Venta' in column or 'Costo' in column else '.1%')),
-        y=alt.Y('count()', title='Frecuencia')
+        x=alt.X(
+            f'{column}:Q',
+            bin=alt.Bin(maxbins=30),
+            title=title,
+            axis=alt.Axis(format=value_format, labelFontSize=10, titleFontSize=11)
+        ),
+        y=alt.Y('count()', title='Frecuencia', axis=alt.Axis(labelFontSize=10, titleFontSize=11)),
+        tooltip=[
+            alt.Tooltip(f'{column}:Q', bin=True, title='Rango', format=value_format),
+            alt.Tooltip('count():Q', title='Frecuencia', format=',d')
+        ]
     )
-    
-    # Líneas de percentiles
+
     df_lines = pd.DataFrame([
-        {'x': p05, 'label': 'P05', 'pct': 'P05', 'color': COLOR_EXPENSE}, # Rojo (Pesimista)
-        {'x': p50, 'label': 'Mediana', 'pct': 'P50', 'color': 'white'}, # Blanco (Central)
-        {'x': p95, 'label': 'P95', 'pct': 'P95', 'color': COLOR_INCOME}  # Azul (Optimista)
+        {'x': p05, 'label': 'P05', 'color': COLOR_EXPENSE},
+        {'x': p50, 'label': 'P50', 'color': 'white'},
+        {'x': p95, 'label': 'P95', 'color': COLOR_INCOME}
     ])
-    
+
     rules = alt.Chart(df_lines).mark_rule(
         strokeDash=[3, 3],
         strokeWidth=2
     ).encode(
         x='x:Q',
-        color=alt.Color('color:N', scale=None), # Usar color directo
-        opacity=alt.value(0.9)
+        color=alt.Color('color:N', scale=None),
+        opacity=alt.value(0.9),
+        tooltip=[
+            alt.Tooltip('label:N', title='Percentil'),
+            alt.Tooltip('x:Q', title='Valor', format=value_format)
+        ]
     )
-    
-    # Labels de percentiles
+
     labels = alt.Chart(df_lines).mark_text(
         align='center',
         dy=-10,
@@ -847,13 +862,13 @@ def _crear_histograma(df: pd.DataFrame, column: str, title: str,
         text=alt.Text('label:N'),
         color=alt.Color('color:N', scale=None)
     )
-    
+
     chart_title = title
     chart_subtitle = subtitle or f"Mediana: {format_fn(p50)}"
-    
+
     return alt.layer(hist, rules, labels).properties(
-        title=alt.TitleParams(chart_title, subtitle=chart_subtitle, 
-                             fontSize=14, anchor='start'),
+        title=alt.TitleParams(chart_title, subtitle=chart_subtitle,
+                              fontSize=14, anchor='start'),
         width=320,
         height=220
     )
@@ -950,10 +965,10 @@ def get_montecarlo_confidence_chart(df_curves: pd.DataFrame,
     if construction_end is not None:
         df_const = pd.DataFrame([{'x': construction_end}])
         line_const = alt.Chart(df_const).mark_rule(
-            color='#ffaa00', strokeWidth=2, strokeDash=[6, 4]
+            color=COLOR_WARNING, strokeWidth=2, strokeDash=[6, 4]
         ).encode(x='x:O')
         label_const = alt.Chart(df_const).mark_text(
-            align='center', dy=-10, fontSize=9, color='#ffaa00', fontWeight='bold'
+            align='center', dy=-10, fontSize=9, color=COLOR_WARNING, fontWeight='bold'
         ).encode(x='x:O', y=alt.value(0), text=alt.value('Fin Obra'))
         layers.extend([line_const, label_const])
     
@@ -965,11 +980,11 @@ def get_montecarlo_confidence_chart(df_curves: pd.DataFrame,
         else:
             be_val = 0
         df_be = pd.DataFrame([{'Mes_Int': be_mes, 'P50': be_val}])
-        point_be = alt.Chart(df_be).mark_circle(size=80, color='#00ff88').encode(
+        point_be = alt.Chart(df_be).mark_circle(size=80, color=COLOR_SUCCESS).encode(
             x='Mes_Int:O', y='P50:Q'
         )
         label_be = alt.Chart(df_be).mark_text(
-            align='left', dx=8, dy=5, fontSize=10, fontWeight='bold', color='#00ff88'
+            align='left', dx=8, dy=5, fontSize=10, fontWeight='bold', color=COLOR_SUCCESS
         ).encode(x='Mes_Int:O', y='P50:Q', text=alt.value('Break-Even'))
         layers.extend([point_be, label_be])
     
@@ -1038,7 +1053,7 @@ def get_montecarlo_flow_confidence_chart(df_curves: pd.DataFrame,
     
     # Barras de tierra (sin variabilidad) - color diferenciado
     tierra_bars = alt.Chart(stats_tierra).mark_bar(
-        color='#ff8080',  # Rojo claro para tierra
+        color=COLOR_EXPENSE_SOFT,  # Rojo claro para tierra
         opacity=0.4
     ).encode(
         x='Mes_Int:O',
@@ -1069,10 +1084,10 @@ def get_montecarlo_flow_confidence_chart(df_curves: pd.DataFrame,
         if construction_end <= max_month:
             df_const = pd.DataFrame([{'x': construction_end}])
             line_const = alt.Chart(df_const).mark_rule(
-                color='#ffaa00', strokeWidth=2, strokeDash=[6, 4]
+                color=COLOR_WARNING, strokeWidth=2, strokeDash=[6, 4]
             ).encode(x='x:O')
             label_const = alt.Chart(df_const).mark_text(
-                align='center', dy=-10, fontSize=9, color='#ffaa00', fontWeight='bold'
+                align='center', dy=-10, fontSize=9, color=COLOR_WARNING, fontWeight='bold'
             ).encode(x='x:O', y=alt.value(0), text=alt.value('Fin Obra'))
             layers.extend([line_const, label_const])
     
@@ -1129,10 +1144,10 @@ def get_accum_chart(df_flow: pd.DataFrame,
     if construction_end is not None:
         df_const = pd.DataFrame([{'x': construction_end}])
         line_const = alt.Chart(df_const).mark_rule(
-            color='#ffaa00', strokeWidth=2, strokeDash=[6, 4]
+            color=COLOR_WARNING, strokeWidth=2, strokeDash=[6, 4]
         ).encode(x='x:O')
         label_const = alt.Chart(df_const).mark_text(
-            align='center', dy=-10, fontSize=9, color='#ffaa00', fontWeight='bold'
+            align='center', dy=-10, fontSize=9, color=COLOR_WARNING, fontWeight='bold'
         ).encode(x='x:O', y=alt.value(0), text=alt.value('Fin Obra'))
         layers.extend([line_const, label_const])
     
@@ -1144,11 +1159,11 @@ def get_accum_chart(df_flow: pd.DataFrame,
         else:
             be_val = 0
         df_be = pd.DataFrame([{'Mes_Int': be_mes, 'Cash_Acumulado': be_val}])
-        point_be = alt.Chart(df_be).mark_circle(size=80, color='#00ff88').encode(
+        point_be = alt.Chart(df_be).mark_circle(size=80, color=COLOR_SUCCESS).encode(
             x='Mes_Int:O', y='Cash_Acumulado:Q'
         )
         label_be = alt.Chart(df_be).mark_text(
-            align='left', dx=8, dy=5, fontSize=10, fontWeight='bold', color='#00ff88'
+            align='left', dx=8, dy=5, fontSize=10, fontWeight='bold', color=COLOR_SUCCESS
         ).encode(x='Mes_Int:O', y='Cash_Acumulado:Q', text=alt.value('Break-Even'))
         layers.extend([point_be, label_be])
     
@@ -1239,10 +1254,10 @@ def get_flow_bars_chart(df_flow: pd.DataFrame, construction_end: int = None) -> 
     if construction_end is not None and construction_end <= max_month:
         df_const = pd.DataFrame([{'x': construction_end}])
         line_const = alt.Chart(df_const).mark_rule(
-            color='#ffaa00', strokeWidth=2, strokeDash=[6, 4]
+            color=COLOR_WARNING, strokeWidth=2, strokeDash=[6, 4]
         ).encode(x='x:O')
         label_const = alt.Chart(df_const).mark_text(
-            align='center', dy=-10, fontSize=9, color='#ffaa00', fontWeight='bold'
+            align='center', dy=-10, fontSize=9, color=COLOR_WARNING, fontWeight='bold'
         ).encode(x='x:O', y=alt.value(0), text=alt.value('Fin Obra'))
         layers.extend([line_const, label_const])
     
