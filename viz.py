@@ -516,7 +516,7 @@ def get_cashflow_chart(
         height=100# Más compacto
     )
     
-    return alt.vconcat(top_chart, bottom_chart).resolve_scale(x='shared')
+    return alt.vconcat(bottom_chart, top_chart).resolve_scale(x='shared')
 
 
 def crear_dashboard_detallado(
@@ -527,7 +527,7 @@ def crear_dashboard_detallado(
     break_even_month: Optional[float] = None
 ) -> alt.VConcatChart:
     """
-    Dashboard detallado: Flujos mensuales (arriba) y Balance acumulado (abajo).
+    Dashboard detallado: Balance acumulado (arriba) y flujos mensuales (abajo).
     """
     df = df_mensual.copy()
     max_month = int(df['Mes'].max())
@@ -597,7 +597,7 @@ def crear_dashboard_detallado(
             'P50': stats_flow['Cash_Acumulado'] 
         })
 
-    # --- GRÁFICO 1: FLUJOS MENSUALES (Arriba) ---
+    # --- GRÁFICO 1: FLUJOS MENSUALES (Abajo) ---
     
     # Preparar datos tidy para barras
     df_bars = pd.melt(stats_flow, id_vars=['Mes_Int'], value_vars=['Ingresos', 'Egresos'], var_name='Tipo', value_name='Monto')
@@ -663,7 +663,7 @@ def crear_dashboard_detallado(
         height=CHART_HEIGHT_MAIN
     )
 
-    # --- GRÁFICO 2: BALANCE ACUMULADO (Abajo) ---
+    # --- GRÁFICO 2: BALANCE ACUMULADO (Arriba) ---
     
     bottom_layers = []
     
@@ -726,7 +726,7 @@ def crear_dashboard_detallado(
         height=200
     )
     
-    return alt.vconcat(top_chart, bottom_chart).resolve_scale(x='shared')
+    return alt.vconcat(bottom_chart, top_chart).resolve_scale(x='shared')
 
 
 # =============================================================================
