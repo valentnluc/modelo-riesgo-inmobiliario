@@ -297,17 +297,22 @@ for col, (label, (f_precio, f_costo, detalle)) in zip(cols, escenarios.items()):
 # 5. Distribuciones (Monte Carlo)
 if df_mc is not None:
     st.markdown("### 6. Distribuciones (Monte Carlo)")
+    st.caption("Fila 1: resultado financiero del proyecto (VAN y TIR).")
     c1, c2 = st.columns(2)
     with c1:
-        render_altair_stretch(chart_tir)
+        render_altair_stretch(chart_van)
     with c2:
-        chart_ventas, chart_costos = viz.crear_graficos_distribucion_montecarlo(df_mc)
-        render_altair_stretch(chart_ventas)
+        render_altair_stretch(chart_tir)
+
+    st.caption("Fila 2: drivers operativos de volumen y costo (ventas y costos totales).")
+    chart_ventas, chart_costos = viz.crear_graficos_distribucion_montecarlo(df_mc)
     c3, c4 = st.columns(2)
     with c3:
-        render_altair_stretch(chart_costos)
+        render_altair_stretch(chart_ventas)
     with c4:
-        render_altair_stretch(chart_sens_tir)
+        render_altair_stretch(chart_costos)
+
+    st.caption("Lectura sugerida: P05 es un escenario conservador, P50 la mediana esperada y P95 un escenario optimista para cada métrica.")
 
 # 7. Bajo el capot
 st.markdown("### 7. Bajo el capot")

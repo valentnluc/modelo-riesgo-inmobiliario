@@ -801,41 +801,53 @@ def get_sensitivity_heatmap(df_sens: pd.DataFrame, metric: str = 'VAN') -> alt.C
 # GRÁFICOS MONTE CARLO
 # =============================================================================
 
-def _crear_histograma(df: pd.DataFrame, column: str, title: str, 
+def _crear_histograma(df: pd.DataFrame, column: str, title: str,
                       color: str, format_fn, subtitle: str = None) -> alt.Chart:
-    """Helper para crear histogramas con percentiles."""
+    """Helper para crear histogramas con percentiles y estilo consistente."""
     data = df[column].dropna()
     if len(data) == 0:
         return alt.Chart(pd.DataFrame()).mark_text(text='Sin datos')
-    
+
     p05 = data.quantile(0.05)
     p50 = data.quantile(0.5)
     p95 = data.quantile(0.95)
-    
-    # Histograma - Barras Azules por defecto (Estilo FT)
+
+    is_pct = column == 'TIR'
+    value_format = '.1%' if is_pct else '~s'
+
     hist = alt.Chart(df).mark_bar(color=color, opacity=0.8).encode(
-        x=alt.X(f'{column}:Q', bin=alt.Bin(maxbins=30), title=title,
-               axis=alt.Axis(format='~s' if 'VAN' in column or 'Venta' in column or 'Costo' in column else '.1%')),
-        y=alt.Y('count()', title='Frecuencia')
+        x=alt.X(
+            f'{column}:Q',
+            bin=alt.Bin(maxbins=30),
+            title=title,
+            axis=alt.Axis(format=value_format, labelFontSize=10, titleFontSize=11)
+        ),
+        y=alt.Y('count()', title='Frecuencia', axis=alt.Axis(labelFontSize=10, titleFontSize=11)),
+        tooltip=[
+            alt.Tooltip(f'{column}:Q', bin=True, title='Rango', format=value_format),
+            alt.Tooltip('count():Q', title='Frecuencia', format=',d')
+        ]
     )
-    
-    # Líneas de percentiles
+
     df_lines = pd.DataFrame([
-        {'x': p05, 'label': 'P05', 'pct': 'P05', 'color': COLOR_EXPENSE}, # Rojo (Pesimista)
-        {'x': p50, 'label': 'Mediana', 'pct': 'P50', 'color': 'white'}, # Blanco (Central)
-        {'x': p95, 'label': 'P95', 'pct': 'P95', 'color': COLOR_INCOME}  # Azul (Optimista)
+        {'x': p05, 'label': 'P05', 'color': COLOR_EXPENSE},
+        {'x': p50, 'label': 'P50', 'color': 'white'},
+        {'x': p95, 'label': 'P95', 'color': COLOR_INCOME}
     ])
-    
+
     rules = alt.Chart(df_lines).mark_rule(
         strokeDash=[3, 3],
         strokeWidth=2
     ).encode(
         x='x:Q',
-        color=alt.Color('color:N', scale=None), # Usar color directo
-        opacity=alt.value(0.9)
+        color=alt.Color('color:N', scale=None),
+        opacity=alt.value(0.9),
+        tooltip=[
+            alt.Tooltip('label:N', title='Percentil'),
+            alt.Tooltip('x:Q', title='Valor', format=value_format)
+        ]
     )
-    
-    # Labels de percentiles
+
     labels = alt.Chart(df_lines).mark_text(
         align='center',
         dy=-10,
@@ -847,13 +859,13 @@ def _crear_histograma(df: pd.DataFrame, column: str, title: str,
         text=alt.Text('label:N'),
         color=alt.Color('color:N', scale=None)
     )
-    
+
     chart_title = title
     chart_subtitle = subtitle or f"Mediana: {format_fn(p50)}"
-    
+
     return alt.layer(hist, rules, labels).properties(
-        title=alt.TitleParams(chart_title, subtitle=chart_subtitle, 
-                             fontSize=14, anchor='start'),
+        title=alt.TitleParams(chart_title, subtitle=chart_subtitle,
+                              fontSize=14, anchor='start'),
         width=320,
         height=220
     )
