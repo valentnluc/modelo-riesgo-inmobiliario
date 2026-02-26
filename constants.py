@@ -29,11 +29,20 @@ COLORS = {
     'brand': '#295bac',        # Alias - para compatibilidad viz.py (Blue)
 }
 
-# Alias para gráficos de flujos
-COLOR_INCOME = COLORS['secondary']      # Azul - ingresos
-COLOR_EXPENSE = COLORS['primary']       # Rojo - egresos
-COLOR_NET = COLORS['text']              # Negro - flujo neto
-COLOR_ACCUM = COLORS['quaternary']      # Teal - acumulado
+# Alias para gráficos de flujos (semántica financiera)
+# - Ingresos/escenarios optimistas: azul
+# - Egresos/escenarios pesimistas: rojo
+COLOR_INCOME = COLORS['secondary']      # Azul - ingresos / upside
+COLOR_EXPENSE = COLORS['primary']       # Rojo - egresos / downside
+COLOR_NET = COLORS['text']              # Neutro - flujo neto
+COLOR_ACCUM = COLORS['quaternary']      # Teal - saldo acumulado
+
+# Tokens visuales para anotaciones y referencias transversales
+# Usar estos tokens en lugar de hex literales dentro de viz.py
+COLOR_WARNING = '#ffaa00'               # Hitos/alertas (ej.: línea Fin Obra)
+COLOR_SUCCESS = '#00ff88'               # Hitos positivos (ej.: punto Break-Even)
+COLOR_REFERENCE = '#ffffff'             # Referencia neutral (ej.: mediana/guías)
+COLOR_EXPENSE_SOFT = '#ff8080'          # Variante suave de egresos (ej.: tierra)
 
 
 # CONFIG GRÁFICOS
