@@ -46,6 +46,60 @@ def render_altair_stretch(chart):
     """Render helper to avoid inline nested calls and keep chart rendering syntax simple."""
     st.altair_chart(chart, width="stretch")
 
+MAX_MC_ITERACIONES = 10000
+
+
+@st.cache_data(show_spinner=False)
+def _ejecutar_montecarlo_cacheado(
+    n_iteraciones: int,
+    parametros_ventas: dict,
+    parametros_costos: dict,
+    parametros_tierra: dict,
+    meses_totales: tuple,
+    meses_obra: tuple,
+    tasa_anual: float,
+    cv_ventas: float,
+    cv_costos: float,
+    semilla: int | None,
+):
+    return model.ejecutar_montecarlo(
+        n_iteraciones,
+        parametros_ventas,
+        parametros_costos,
+        parametros_tierra,
+        meses_totales,
+        meses_obra,
+        tasa_descuento=tasa_anual,
+        variacion_ventas=cv_ventas,
+        variacion_costos=cv_costos,
+        semilla=semilla,
+        retornar_curvas=True,
+        max_curvas=200,
+        usar_cache=True,
+    )
+
+
+@st.cache_data(show_spinner=False)
+def _ejecutar_sensibilidad_cacheado(
+    parametros_ventas: dict,
+    parametros_costos: dict,
+    parametros_tierra: dict,
+    meses_totales: tuple,
+    meses_obra: tuple,
+    tasa_anual: float,
+    pasos: int = 4,
+):
+    return model.ejecutar_analisis_sensibilidad(
+        parametros_ventas,
+        parametros_costos,
+        parametros_tierra,
+        meses_totales,
+        meses_obra,
+        tasa_anual,
+        pasos=pasos,
+        usar_cache=True,
+    )
+
 
 # =============================================================================
 # HEADER
@@ -192,7 +246,27 @@ with st.sidebar.expander("6. Monte Carlo", expanded=False):
     col1, col2 = st.columns(2)
     cv_ventas = col1.number_input("CV Ventas", value=0.15, step=0.01, min_value=0.0, max_value=1.0)
     cv_costos = col2.number_input("CV Costos", value=0.10, step=0.01, min_value=0.0, max_value=1.0)
-    parametros_mc = {"n_sims": int(mc_iteraciones), "seed": mc_semilla if mc_semilla > 0 else None, "sales_cv": cv_ventas, "cost_cv": cv_costos}
+
+    mc_iteraciones_solicitadas = int(mc_iteraciones)
+    mc_iteraciones_efectivas = min(mc_iteraciones_solicitadas, MAX_MC_ITERACIONES)
+
+    if mc_iteraciones_solicitadas > MAX_MC_ITERACIONES:
+        st.warning(
+            f"Se limitaron las iteraciones a {MAX_MC_ITERACIONES:,} para mantener tiempos de respuesta razonables. "
+            f"Solicitaste {mc_iteraciones_solicitadas:,}."
+        )
+    elif mc_iteraciones_efectivas >= int(MAX_MC_ITERACIONES * 0.8):
+        st.info(
+            f"Carga alta: {mc_iteraciones_efectivas:,} simulaciones pueden demorar. "
+            "Se reutilizarán resultados cacheados si no cambian los parámetros relevantes."
+        )
+
+    parametros_mc = {
+        "n_sims": mc_iteraciones_efectivas,
+        "seed": mc_semilla if mc_semilla > 0 else None,
+        "sales_cv": cv_ventas,
+        "cost_cv": cv_costos,
+    }
 
 
 # EJECUCIÓN MODELO
@@ -208,18 +282,28 @@ df_mc = None
 df_curvas = None
 
 with st.spinner(f"Calculando {parametros_mc['n_sims']:,} escenarios..."):
-    df_mc, df_curvas = model.ejecutar_montecarlo(
-        parametros_mc['n_sims'], parametros_ventas, parametros_costos, parametros_tierra,
-        meses_totales, meses_obra, tasa_descuento=tasa_anual,
-        variacion_ventas=parametros_mc['sales_cv'], variacion_costos=parametros_mc['cost_cv'],
-        semilla=parametros_mc['seed'], retornar_curvas=True, max_curvas=200
+    df_mc, df_curvas = _ejecutar_montecarlo_cacheado(
+        parametros_mc['n_sims'],
+        parametros_ventas,
+        parametros_costos,
+        parametros_tierra,
+        meses_totales,
+        meses_obra,
+        tasa_anual,
+        parametros_mc['sales_cv'],
+        parametros_mc['cost_cv'],
+        parametros_mc['seed'],
     )
 
 with st.spinner("Calculando sensibilidad..."):
-    df_sens = model.ejecutar_analisis_sensibilidad(
-        parametros_ventas, parametros_costos, parametros_tierra,
-        meses_totales, meses_obra, tasa_anual,
-        pasos=4
+    df_sens = _ejecutar_sensibilidad_cacheado(
+        parametros_ventas,
+        parametros_costos,
+        parametros_tierra,
+        meses_totales,
+        meses_obra,
+        tasa_anual,
+        pasos=4,
     )
 
 
