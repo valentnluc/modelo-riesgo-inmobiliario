@@ -46,14 +46,74 @@ def crear_inputs_curva(prefix: str, duration: int, defaults: dict | None = None)
             key=f"{prefix}_alpha",
         )
     with col2:
-        scale = st.number_input(
-            "Dispersion",
-            value=defaults.get("scale", 5.0),
-            min_value=0.1,
-            step=0.5,
-            key=f"{prefix}_scale",
-        )
-    return {"moda": mode, "alpha": alpha, "scale": scale}
+        scale = st.number_input("Dispersion", value=defaults.get('scale', 5.0), min_value=0.1, step=0.5, key=f"{prefix}_scale")
+    return {'moda': mode, 'alpha': alpha, 'scale': scale}
+
+def render_altair_stretch(chart):
+    """Render helper to avoid inline nested calls and keep chart rendering syntax simple."""
+    st.altair_chart(chart, width="stretch")
+
+MAX_MC_ITERACIONES = 10000
+
+
+@st.cache_data(show_spinner=False)
+def _ejecutar_montecarlo_cacheado(
+    n_iteraciones: int,
+    parametros_ventas: dict,
+    parametros_costos: dict,
+    parametros_tierra: dict,
+    meses_totales: tuple,
+    meses_obra: tuple,
+    tasa_anual: float,
+    cv_ventas: float,
+    cv_costos: float,
+    semilla: int | None,
+):
+    return model.ejecutar_montecarlo(
+        n_iteraciones,
+        parametros_ventas,
+        parametros_costos,
+        parametros_tierra,
+        meses_totales,
+        meses_obra,
+        tasa_descuento=tasa_anual,
+        variacion_ventas=cv_ventas,
+        variacion_costos=cv_costos,
+        semilla=semilla,
+        retornar_curvas=True,
+        max_curvas=200,
+        usar_cache=True,
+    )
+
+
+@st.cache_data(show_spinner=False)
+def _ejecutar_sensibilidad_cacheado(
+    parametros_ventas: dict,
+    parametros_costos: dict,
+    parametros_tierra: dict,
+    meses_totales: tuple,
+    meses_obra: tuple,
+    tasa_anual: float,
+    pasos: int = 4,
+):
+    return model.ejecutar_analisis_sensibilidad(
+        parametros_ventas,
+        parametros_costos,
+        parametros_tierra,
+        meses_totales,
+        meses_obra,
+        tasa_anual,
+        pasos=pasos,
+        usar_cache=True,
+    )
+
+
+# =============================================================================
+# HEADER
+# =============================================================================
+
+st.title("Modelo de Riesgo Inmobiliario")
+st.markdown("---")
 
 
 def render_altair_stretch(chart) -> None:
@@ -184,6 +244,34 @@ def render_sidebar() -> tuple[model.ProjectConfig, dict]:
     }
     return project_config, parametros_mc
 
+# --- Monte Carlo Config ---
+with st.sidebar.expander("6. Monte Carlo", expanded=False):
+    mc_iteraciones = st.number_input("Iteraciones", value=500, step=100, min_value=100)
+    mc_semilla = st.number_input("Semilla (0=aleatorio)", value=0, step=1, min_value=0)
+    col1, col2 = st.columns(2)
+    cv_ventas = col1.number_input("CV Ventas", value=0.15, step=0.01, min_value=0.0, max_value=1.0)
+    cv_costos = col2.number_input("CV Costos", value=0.10, step=0.01, min_value=0.0, max_value=1.0)
+
+    mc_iteraciones_solicitadas = int(mc_iteraciones)
+    mc_iteraciones_efectivas = min(mc_iteraciones_solicitadas, MAX_MC_ITERACIONES)
+
+    if mc_iteraciones_solicitadas > MAX_MC_ITERACIONES:
+        st.warning(
+            f"Se limitaron las iteraciones a {MAX_MC_ITERACIONES:,} para mantener tiempos de respuesta razonables. "
+            f"Solicitaste {mc_iteraciones_solicitadas:,}."
+        )
+    elif mc_iteraciones_efectivas >= int(MAX_MC_ITERACIONES * 0.8):
+        st.info(
+            f"Carga alta: {mc_iteraciones_efectivas:,} simulaciones pueden demorar. "
+            "Se reutilizarán resultados cacheados si no cambian los parámetros relevantes."
+        )
+
+    parametros_mc = {
+        "n_sims": mc_iteraciones_efectivas,
+        "seed": mc_semilla if mc_semilla > 0 else None,
+        "sales_cv": cv_ventas,
+        "cost_cv": cv_costos,
+    }
 
 def run_model(project_config: model.ProjectConfig, parametros_mc: dict) -> dict:
     parametros_ventas, parametros_costos, parametros_tierra = (
@@ -226,39 +314,29 @@ def run_model(project_config: model.ProjectConfig, parametros_mc: dict) -> dict:
             pasos=4,
         )
 
-    return {
-        "parametros_ventas": parametros_ventas,
-        "parametros_costos": parametros_costos,
-        "parametros_tierra": parametros_tierra,
-        "df_base": df_base,
-        "metricas_base": metricas_base,
-        "df_mc": df_mc,
-        "df_curvas": df_curvas,
-        "df_sens": df_sens,
-        "meses_obra": project_config.meses_obra,
-        "meses_totales": project_config.meses_totales,
-    }
-
-
-def render_kpis(metricas_base: dict, df_mc) -> None:
-    st.markdown("### 0. Metricas clave")
-    van_stats = df_mc["VAN"].describe(percentiles=[0.05, 0.5, 0.95])
-    prob_loss = (df_mc["VAN"] < 0).mean()
-
-    k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
-    k1.metric("VAN Base", format_currency(metricas_base["VAN"]), help="Valor Actual Neto escenario base")
-    k2.metric("TIR", format_percent(metricas_base["TIR"]), help="Tasa Interna de Retorno")
-    k3.metric(
-        "Capital Trabajo",
-        format_currency(metricas_base["MaxFinancingNeed"]),
-        help="Maxima necesidad financiera (Déficit acumulado)",
+with st.spinner(f"Calculando {parametros_mc['n_sims']:,} escenarios..."):
+    df_mc, df_curvas = _ejecutar_montecarlo_cacheado(
+        parametros_mc['n_sims'],
+        parametros_ventas,
+        parametros_costos,
+        parametros_tierra,
+        meses_totales,
+        meses_obra,
+        tasa_anual,
+        parametros_mc['sales_cv'],
+        parametros_mc['cost_cv'],
+        parametros_mc['seed'],
     )
-    k4.metric("VAN P05", format_currency(van_stats["5%"]), help="Percentil 05 (pesimista)")
-    k5.metric("VAN P95", format_currency(van_stats["95%"]), help="Percentil 95 (optimista)")
-    k6.metric("Prob. Perdida", format_percent(prob_loss), help="% escenarios VAN < 0")
-    k7.metric(
-        "Break Even",
-        f"M{int(metricas_base['BreakEvenMonth'])}" if metricas_base["BreakEvenMonth"] else "-",
+
+with st.spinner("Calculando sensibilidad..."):
+    df_sens = _ejecutar_sensibilidad_cacheado(
+        parametros_ventas,
+        parametros_costos,
+        parametros_tierra,
+        meses_totales,
+        meses_obra,
+        tasa_anual,
+        pasos=4,
     )
 
     st.info(

@@ -15,6 +15,32 @@ from metrics import calcular_van, calcular_tir, calcular_max_deficit, calcular_b
 from simulation import simular
 from constants import DEFAULT_ANNUAL_RATE
 
+
+_MC_CACHE: Dict[Tuple[Any, ...], Tuple[pd.DataFrame, Optional[pd.DataFrame]]] = {}
+_SENS_CACHE: Dict[Tuple[Any, ...], pd.DataFrame] = {}
+
+
+def _freeze_for_cache(value: Any) -> Any:
+    """Convierte estructuras mutables a una representación hashable y estable."""
+    if isinstance(value, dict):
+        return tuple((k, _freeze_for_cache(v)) for k, v in sorted(value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_for_cache(v) for v in value)
+    if isinstance(value, np.ndarray):
+        return tuple(_freeze_for_cache(v) for v in value.tolist())
+    if isinstance(value, (np.floating, float)):
+        return round(float(value), 10)
+    if isinstance(value, (np.integer, int)):
+        return int(value)
+    return value
+
+
+def _build_signature(*args: Any, **kwargs: Any) -> Tuple[Any, ...]:
+    """Firma de parámetros estable para cachear resultados."""
+    frozen_args = tuple(_freeze_for_cache(v) for v in args)
+    frozen_kwargs = tuple((k, _freeze_for_cache(v)) for k, v in sorted(kwargs.items()))
+    return frozen_args + frozen_kwargs
+
 @dataclass
 class ProjectConfig:
     """
@@ -167,10 +193,30 @@ def ejecutar_montecarlo(
     variacion_costos: float = 0.0,
     semilla: Optional[int] = None,
     retornar_curvas: bool = True,
-    max_curvas: int = 200
+    max_curvas: int = 200,
+    usar_cache: bool = True
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Wrapper para lanzar la simulación Monte Carlo."""
-    return simular(
+    signature = _build_signature(
+        n_iteraciones,
+        parametros_ventas,
+        parametros_costos,
+        parametros_tierra,
+        meses_totales,
+        meses_obra,
+        tasa_descuento,
+        variacion_ventas,
+        variacion_costos,
+        semilla,
+        retornar_curvas,
+        max_curvas,
+    )
+
+    if usar_cache and signature in _MC_CACHE:
+        df_mc_cached, df_curvas_cached = _MC_CACHE[signature]
+        return df_mc_cached.copy(deep=True), None if df_curvas_cached is None else df_curvas_cached.copy(deep=True)
+
+    df_mc, df_curvas = simular(
         n_iteraciones=n_iteraciones,
         parametros_ventas=parametros_ventas,
         parametros_costos=parametros_costos,
@@ -186,6 +232,14 @@ def ejecutar_montecarlo(
         mostrar_progreso=True
     )
 
+    if usar_cache:
+        _MC_CACHE[signature] = (
+            df_mc.copy(deep=True),
+            None if df_curvas is None else df_curvas.copy(deep=True)
+        )
+
+    return df_mc, df_curvas
+
 
 def ejecutar_analisis_sensibilidad(
     parametros_ventas: dict,
@@ -194,9 +248,23 @@ def ejecutar_analisis_sensibilidad(
     meses_totales: Tuple[int, int],
     meses_obra: Tuple[int, int],
     tasa_anual: float,
-    pasos: int = 5
+    pasos: int = 5,
+    usar_cache: bool = True
 ) -> pd.DataFrame:
     """Matriz de sensibilidad Precio vs Costo (+/- 20% en pasos n)."""
+    signature = _build_signature(
+        parametros_ventas,
+        parametros_costos,
+        parametros_tierra,
+        meses_totales,
+        meses_obra,
+        tasa_anual,
+        pasos,
+    )
+
+    if usar_cache and signature in _SENS_CACHE:
+        return _SENS_CACHE[signature].copy(deep=True)
+
     # Rango +/- 20%
     variaciones = np.linspace(-0.20, 0.20, pasos)
     
@@ -230,4 +298,7 @@ def ejecutar_analisis_sensibilidad(
                 'TIR': tir
             })
             
-    return pd.DataFrame(resultados)
+    df_resultados = pd.DataFrame(resultados)
+    if usar_cache:
+        _SENS_CACHE[signature] = df_resultados.copy(deep=True)
+    return df_resultados

@@ -577,16 +577,17 @@ def crear_dashboard_detallado(
         stats_balance = df_all.groupby('Mes_Int')['Cash_Acumulado'].quantile([0.05, 0.5, 0.95]).unstack()
         stats_balance.columns = ['P05', 'P50', 'P95']
         stats_balance = stats_balance.reset_index()
-        
-        # Estadísticas para Flujos
-        stats_flow_median = df_all.groupby('Mes_Int')[['Ingresos', 'Egresos', 'Flujo_Neto']].median().reset_index()
-        
-        # CI para Ingresos y Egresos (Whiskers) + Flujo Neto (Area)
-        stats_flow_ci = df_all.groupby('Mes_Int')[['Ingresos', 'Egresos', 'Flujo_Neto']].quantile([0.05, 0.95]).unstack()
+
+        # Estadísticas para Flujos (reutilizando el mismo groupby)
+        grouped_flow = df_all.groupby('Mes_Int')[['Ingresos', 'Egresos', 'Flujo_Neto']]
+        stats_flow_median = grouped_flow.median()
+
+        # CI para Ingresos y Egresos (Whiskers) + Flujo Neto
+        stats_flow_ci = grouped_flow.quantile([0.05, 0.95]).unstack()
         stats_flow_ci.columns = ['Ingresos_P05', 'Ingresos_P95', 'Egresos_P05', 'Egresos_P95', 'Flow_P05', 'Flow_P95']
-        
-        # Merge de todo
-        stats_flow = pd.merge(stats_flow_median, stats_flow_ci, on='Mes_Int')
+
+        # Join por índice para evitar merges/reindex innecesarios
+        stats_flow = stats_flow_median.join(stats_flow_ci).reset_index()
         
     else:
         # Determinístico
@@ -616,27 +617,28 @@ def crear_dashboard_detallado(
     
     # Intervalo de Confianza (Whiskers)
     if es_montecarlo and 'Ingresos_P05' in stats_flow.columns:
-        # Calcular columnas neg para Egresos
-        stats_flow['Egresos_P05_Neg'] = -stats_flow['Egresos_P05']
-        stats_flow['Egresos_P95_Neg'] = -stats_flow['Egresos_P95']
-        
+        ci_flow = stats_flow.assign(
+            Egresos_P05_Neg=-stats_flow['Egresos_P05'],
+            Egresos_P95_Neg=-stats_flow['Egresos_P95'],
+        )
+
         # 1. Ingresos CI (Azul Oscuro)
-        ci_ing_rule = alt.Chart(stats_flow).mark_rule(color=COLOR_INCOME, opacity=0.7, strokeWidth=2).encode(
+        ci_ing_rule = alt.Chart(ci_flow).mark_rule(color=COLOR_INCOME, opacity=0.7, strokeWidth=2).encode(
             x='Mes_Int:Q', y='Ingresos_P05:Q', y2='Ingresos_P95:Q'
         )
         # ci_ing_p05 y p95 eliminados para reducir ruido visual
         top_layers.append(ci_ing_rule)
-        
+
         # 2. Egresos CI (Rojo Oscuro) - Invertidos
-        ci_egr_rule = alt.Chart(stats_flow).mark_rule(color=COLOR_EXPENSE, opacity=0.7, strokeWidth=2).encode(
+        ci_egr_rule = alt.Chart(ci_flow).mark_rule(color=COLOR_EXPENSE, opacity=0.7, strokeWidth=2).encode(
             x='Mes_Int:Q', y='Egresos_P05_Neg:Q', y2='Egresos_P95_Neg:Q'
         )
         # ci_egr_p05 y p95 eliminados para reducir ruido visual
         top_layers.append(ci_egr_rule)
         
         # 3. Flujo Neto CI (Lineas Verticales Blancas) - Petición de usuario
-        if 'Flow_P05' in stats_flow.columns:
-            ci_net_flow = alt.Chart(stats_flow).mark_rule(color=COLOR_REFERENCE, opacity=0.4, strokeWidth=2).encode(
+        if 'Flow_P05' in ci_flow.columns:
+            ci_net_flow = alt.Chart(ci_flow).mark_rule(color='white', opacity=0.4, strokeWidth=2).encode(
                 x='Mes_Int:Q', y='Flow_P05:Q', y2='Flow_P95:Q'
             )
             top_layers.append(ci_net_flow)
