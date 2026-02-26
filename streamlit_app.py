@@ -11,12 +11,7 @@ import viz
 from constants import format_currency, format_percent
 from presets import COSTOS_PRESETS, TIERRA_PRESETS, VENTAS_PRESETS
 
-
-st.set_page_config(
-    page_title="Modelo de Riesgo Inmobiliario",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+MAX_MC_ITERACIONES = 10000
 
 
 def cargar_css() -> None:
@@ -27,12 +22,6 @@ def cargar_css() -> None:
     except FileNotFoundError:
         pass
 
-cargar_css()
-
-# Defaults defensivos para evitar NameError en rutas de ejecución parciales
-df_mc = None
-df_curvas = None
-df_sens = None
 
 def crear_inputs_curva(prefix: str, duration: int, defaults: dict | None = None) -> dict:
     defaults = defaults or {}
@@ -52,14 +41,18 @@ def crear_inputs_curva(prefix: str, duration: int, defaults: dict | None = None)
             key=f"{prefix}_alpha",
         )
     with col2:
-        scale = st.number_input("Dispersion", value=defaults.get('scale', 5.0), min_value=0.1, step=0.5, key=f"{prefix}_scale")
-    return {'moda': mode, 'alpha': alpha, 'scale': scale}
+        scale = st.number_input(
+            "Dispersion",
+            value=defaults.get("scale", 5.0),
+            min_value=0.1,
+            step=0.5,
+            key=f"{prefix}_scale",
+        )
+    return {"moda": mode, "alpha": alpha, "scale": scale}
 
-def render_altair_stretch(chart):
-    """Render helper to avoid inline nested calls and keep chart rendering syntax simple."""
+
+def render_altair_stretch(chart) -> None:
     st.altair_chart(chart, width="stretch")
-
-MAX_MC_ITERACIONES = 10000
 
 
 @st.cache_data(show_spinner=False)
@@ -122,14 +115,14 @@ def recalcular_metricas_escenario(
     meses_obra: tuple,
     tasa_anual: float,
     factor_precio: float = 1.0,
-    factor_costo: float = 1.0
+    factor_costo: float = 1.0,
 ) -> dict:
     """Recalcula métricas determinísticas aplicando factores sobre ventas/costos."""
     params_ventas = parametros_ventas_base.copy()
     params_costos = parametros_costos_base.copy()
 
-    params_ventas['area_n'] = params_ventas.get('area_n', 0) * factor_precio
-    params_costos['limite_n'] = params_costos.get('limite_n', 0) * factor_costo
+    params_ventas["area_n"] = params_ventas.get("area_n", 0) * factor_precio
+    params_costos["limite_n"] = params_costos.get("limite_n", 0) * factor_costo
 
     _, metricas = model.ejecutar_deterministico(
         params_ventas,
@@ -137,16 +130,16 @@ def recalcular_metricas_escenario(
         parametros_tierra,
         meses_totales=meses_totales,
         meses_obra=meses_obra,
-        tasa_anual=tasa_anual
+        tasa_anual=tasa_anual,
     )
     return metricas
 
 
 def clasificar_escenario(metricas: dict) -> tuple[str, str]:
     """Devuelve etiqueta y comentario simple de atractivo/riesgo del escenario."""
-    van = metricas.get('VAN', 0)
-    tir = metricas.get('TIR', 0)
-    capital_trabajo = metricas.get('MaxFinancingNeed', 0)
+    van = metricas.get("VAN", 0)
+    tir = metricas.get("TIR", 0)
+    capital_trabajo = metricas.get("MaxFinancingNeed", 0)
 
     if van > 0 and tir >= 0.18 and capital_trabajo < 0.4 * van:
         return "🟢 Atractivo", "Buen margen y presión financiera manejable."
@@ -160,114 +153,6 @@ def formatear_delta(valor_escenario: float, valor_base: float, formatter) -> str
     delta_valor = valor_escenario - valor_base
     signo = "+" if delta_valor > 0 else "" if delta_valor == 0 else "-"
     return f"{signo}{formatter(abs(delta_valor))}"
-
-
-def recalcular_metricas_escenario(
-    parametros_ventas_base: dict,
-    parametros_costos_base: dict,
-    parametros_tierra: dict,
-    meses_totales: tuple,
-    meses_obra: tuple,
-    tasa_anual: float,
-    factor_precio: float = 1.0,
-    factor_costo: float = 1.0
-) -> dict:
-    """Recalcula métricas determinísticas aplicando factores sobre ventas/costos."""
-    params_ventas = parametros_ventas_base.copy()
-    params_costos = parametros_costos_base.copy()
-
-    params_ventas['area_n'] = params_ventas.get('area_n', 0) * factor_precio
-    params_costos['limite_n'] = params_costos.get('limite_n', 0) * factor_costo
-
-    _, metricas = model.ejecutar_deterministico(
-        params_ventas,
-        params_costos,
-        parametros_tierra,
-        meses_totales=meses_totales,
-        meses_obra=meses_obra,
-        tasa_anual=tasa_anual
-    )
-    return metricas
-
-
-def clasificar_escenario(metricas: dict) -> tuple[str, str]:
-    """Devuelve etiqueta y comentario simple de atractivo/riesgo del escenario."""
-    van = metricas.get('VAN', 0)
-    tir = metricas.get('TIR', 0)
-    capital_trabajo = metricas.get('MaxFinancingNeed', 0)
-
-    if van > 0 and tir >= 0.18 and capital_trabajo < 0.4 * van:
-        return "🟢 Atractivo", "Buen margen y presión financiera manejable."
-    if van > 0 and tir >= 0.12:
-        return "🟡 Requiere mitigación", "Rentable, pero con sensibilidad a ejecución/financiación."
-    return "🔴 Frágil", "Perfil vulnerable: revisar supuestos, costos y estrategia comercial."
-
-
-def formatear_delta(valor_escenario: float, valor_base: float, formatter) -> str:
-    """Formatea delta absoluto versus el escenario base con signo explícito."""
-    delta_valor = valor_escenario - valor_base
-    signo = "+" if delta_valor > 0 else "" if delta_valor == 0 else "-"
-    return f"{signo}{formatter(abs(delta_valor))}"
-
-
-def recalcular_metricas_escenario(
-    parametros_ventas_base: dict,
-    parametros_costos_base: dict,
-    parametros_tierra: dict,
-    meses_totales: tuple,
-    meses_obra: tuple,
-    tasa_anual: float,
-    factor_precio: float = 1.0,
-    factor_costo: float = 1.0
-) -> dict:
-    """Recalcula métricas determinísticas aplicando factores sobre ventas/costos."""
-    params_ventas = parametros_ventas_base.copy()
-    params_costos = parametros_costos_base.copy()
-
-    params_ventas['area_n'] = params_ventas.get('area_n', 0) * factor_precio
-    params_costos['limite_n'] = params_costos.get('limite_n', 0) * factor_costo
-
-    _, metricas = model.ejecutar_deterministico(
-        params_ventas,
-        params_costos,
-        parametros_tierra,
-        meses_totales=meses_totales,
-        meses_obra=meses_obra,
-        tasa_anual=tasa_anual
-    )
-    return metricas
-
-
-def clasificar_escenario(metricas: dict) -> tuple[str, str]:
-    """Devuelve etiqueta y comentario simple de atractivo/riesgo del escenario."""
-    van = metricas.get('VAN', 0)
-    tir = metricas.get('TIR', 0)
-    capital_trabajo = metricas.get('MaxFinancingNeed', 0)
-
-    if van > 0 and tir >= 0.18 and capital_trabajo < 0.4 * van:
-        return "🟢 Atractivo", "Buen margen y presión financiera manejable."
-    if van > 0 and tir >= 0.12:
-        return "🟡 Requiere mitigación", "Rentable, pero con sensibilidad a ejecución/financiación."
-    return "🔴 Frágil", "Perfil vulnerable: revisar supuestos, costos y estrategia comercial."
-
-
-def formatear_delta(valor_escenario: float, valor_base: float, formatter) -> str:
-    """Formatea delta absoluto versus el escenario base con signo explícito."""
-    delta_valor = valor_escenario - valor_base
-    signo = "+" if delta_valor > 0 else "" if delta_valor == 0 else "-"
-    return f"{signo}{formatter(abs(delta_valor))}"
-
-
-# =============================================================================
-# HEADER
-# =============================================================================
-
-st.title("Modelo de Riesgo Inmobiliario")
-st.markdown("---")
-
-
-def render_altair_stretch(chart) -> None:
-    st.altair_chart(chart, width="stretch")
 
 
 def render_sidebar() -> tuple[model.ProjectConfig, dict]:
@@ -360,12 +245,8 @@ def render_sidebar() -> tuple[model.ProjectConfig, dict]:
         mc_iteraciones = st.number_input("Iteraciones", value=500, step=100, min_value=100)
         mc_semilla = st.number_input("Semilla (0=aleatorio)", value=0, step=1, min_value=0)
         col1, col2 = st.columns(2)
-        cv_ventas = col1.number_input(
-            "CV Ventas", value=0.15, step=0.01, min_value=0.0, max_value=1.0
-        )
-        cv_costos = col2.number_input(
-            "CV Costos", value=0.10, step=0.01, min_value=0.0, max_value=1.0
-        )
+        cv_ventas = col1.number_input("CV Ventas", value=0.15, step=0.01, min_value=0.0, max_value=1.0)
+        cv_costos = col2.number_input("CV Costos", value=0.10, step=0.01, min_value=0.0, max_value=1.0)
 
     project_config = model.ProjectConfig(
         m2_terreno=m2_terreno,
@@ -394,54 +275,228 @@ def render_sidebar() -> tuple[model.ProjectConfig, dict]:
     return project_config, parametros_mc
 
 
-project_config, parametros_mc = render_sidebar()
-parametros_ventas, parametros_costos, parametros_tierra = project_config.generar_parametros_simulacion()
-meses_totales = project_config.meses_totales
-meses_obra = project_config.meses_obra
-tasa_anual = parametros_mc["tasa_anual"]
+def render_kpis(metricas_base: dict, df_mc) -> None:
+    st.markdown("### 0. Metricas clave")
 
-# EJECUCIÓN MODELO
+    has_mc_data = df_mc is not None and not getattr(df_mc, "empty", False) and "VAN" in df_mc
+    if has_mc_data:
+        van_stats = df_mc["VAN"].describe(percentiles=[0.05, 0.5, 0.95])
+        prob_loss = (df_mc["VAN"] < 0).mean()
+    else:
+        van_stats = {"5%": metricas_base["VAN"], "95%": metricas_base["VAN"]}
+        prob_loss = 0.0
 
-# Modelo base (siempre)
-df_base, metricas_base = model.ejecutar_deterministico(
-    parametros_ventas, parametros_costos, parametros_tierra,
-    meses_totales=meses_totales, meses_obra=meses_obra, tasa_anual=tasa_anual
-)
+    k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
+    k1.metric("VAN Base", format_currency(metricas_base["VAN"]), help="Valor Actual Neto escenario base")
+    k2.metric("TIR", format_percent(metricas_base["TIR"]), help="Tasa Interna de Retorno")
+    k3.metric(
+        "Capital Trabajo",
+        format_currency(metricas_base["MaxFinancingNeed"]),
+        help="Maxima necesidad financiera (Déficit acumulado)",
+    )
+    k4.metric("VAN P05", format_currency(van_stats["5%"]), help="Percentil 05 (pesimista)")
+    k5.metric("VAN P95", format_currency(van_stats["95%"]), help="Percentil 95 (optimista)")
+    k6.metric("Prob. Perdida", format_percent(prob_loss), help="% escenarios VAN < 0")
+    k7.metric(
+        "Break Even",
+        f"M{int(metricas_base.get('BreakEvenMonth'))}" if metricas_base.get("BreakEvenMonth") else "-",
+    )
 
-# Monte Carlo - automático si está en modo MC
-df_mc = None
-df_curvas = None
-df_sens = None
-
-with st.spinner(f"Calculando {parametros_mc['n_sims']:,} escenarios..."):
-    try:
-        df_mc, df_curvas = model.ejecutar_montecarlo(
-            parametros_mc['n_sims'], parametros_ventas, parametros_costos, parametros_tierra,
-            meses_totales, meses_obra, tasa_descuento=tasa_anual,
-            variacion_ventas=parametros_mc['sales_cv'], variacion_costos=parametros_mc['cost_cv'],
-            semilla=parametros_mc['seed'], retornar_curvas=True, max_curvas=200
+    if has_mc_data:
+        st.info(
+            "Con 90% de confianza, el VAN estará entre "
+            f"{format_currency(van_stats['5%'])} y {format_currency(van_stats['95%'])}. "
+            f"Riesgo de pérdida: {format_percent(prob_loss)}."
         )
-    except Exception:
-        df_mc, df_curvas = None, None
+    else:
+        st.warning("No se pudieron calcular estadísticas Monte Carlo; mostrando métricas del escenario base.")
 
-with st.spinner("Calculando sensibilidad..."):
-    try:
-        df_sens = model.ejecutar_analisis_sensibilidad(
-            parametros_ventas, parametros_costos, parametros_tierra,
-            meses_totales, meses_obra, tasa_anual,
-            pasos=4
+
+def render_distribuciones(df_base, meses_obra: tuple, df_mc, df_sens) -> None:
+    flow_chart = viz.get_unified_flow_chart(
+        df_base,
+        is_montecarlo=False,
+        construction_end=meses_obra[1],
+    )
+
+    chart_van = chart_tir = None
+    if df_mc is not None and not getattr(df_mc, "empty", False):
+        chart_van, chart_tir = viz.crear_graficos_montecarlo(df_mc)
+
+    chart_sens_van = chart_sens_tir = None
+    if df_sens is not None and not getattr(df_sens, "empty", False):
+        chart_sens_van, chart_sens_tir = viz.crear_matrices_sensibilidad(df_sens)
+
+    st.markdown("### 1-2. Evolución del Saldo (Riesgo) + Ingresos vs Egresos (Neto)")
+    st.caption("Incluye arriba Ingresos vs Egresos (Neto) y abajo la curva de saldo acumulado.")
+    render_altair_stretch(flow_chart)
+
+    st.markdown("### 3. Distribución VAN")
+    if chart_van is not None:
+        render_altair_stretch(chart_van)
+    else:
+        st.warning("No se pudo generar la distribución VAN para la corrida actual.")
+
+    st.markdown("### 4. Sensibilidad VAN (Bubbles)")
+    if chart_sens_van is not None:
+        render_altair_stretch(chart_sens_van)
+    else:
+        st.warning("No se pudo generar la matriz de sensibilidad para la corrida actual.")
+
+    if df_mc is not None and not getattr(df_mc, "empty", False) and chart_tir is not None:
+        st.markdown("### 6. Distribuciones (Monte Carlo)")
+        st.caption("Fila 1: resultado financiero del proyecto (VAN y TIR).")
+        c1, c2 = st.columns(2)
+        with c1:
+            render_altair_stretch(chart_van)
+        with c2:
+            render_altair_stretch(chart_tir)
+
+        if chart_sens_tir is not None:
+            render_altair_stretch(chart_sens_tir)
+
+
+def render_comparacion_escenarios(
+    parametros_ventas: dict,
+    parametros_costos: dict,
+    parametros_tierra: dict,
+    meses_totales: tuple,
+    meses_obra: tuple,
+    tasa_anual: float,
+) -> None:
+    st.markdown("### 5. Comparación de Escenarios")
+    st.caption(
+        "Supuestos por escenario: Base (precio 100% / costo 100%), "
+        "Pesimista (precio -10% / costo +10%), Optimista (precio +10% / costo -10%)."
+    )
+
+    escenarios = {
+        "Base": (1.0, 1.0, "Precio = base | Costo = base"),
+        "Pesimista": (0.9, 1.1, "Precio -10% | Costo +10%"),
+        "Optimista": (1.1, 0.9, "Precio +10% | Costo -10%"),
+    }
+    metricas_escenarios = {
+        label: recalcular_metricas_escenario(
+            parametros_ventas,
+            parametros_costos,
+            parametros_tierra,
+            meses_totales,
+            meses_obra,
+            tasa_anual,
+            factor_precio=f_precio,
+            factor_costo=f_costo,
         )
-    except Exception:
-        df_sens = None
+        for label, (f_precio, f_costo, _) in escenarios.items()
+    }
+    metricas_base_escenario = metricas_escenarios["Base"]
+
+    cols = st.columns(3)
+    for col, (label, (_, _, detalle)) in zip(cols, escenarios.items()):
+        metrics = metricas_escenarios[label]
+        insight_label, insight_text = clasificar_escenario(metrics)
+
+        with col:
+            st.subheader(label)
+            st.caption(detalle)
+            st.metric(
+                "VAN",
+                format_currency(metrics["VAN"]),
+                delta=formatear_delta(metrics["VAN"], metricas_base_escenario["VAN"], format_currency),
+            )
+            st.metric(
+                "TIR",
+                format_percent(metrics["TIR"]),
+                delta=formatear_delta(metrics["TIR"], metricas_base_escenario["TIR"], format_percent),
+            )
+            st.metric(
+                "Capital Trabajo",
+                format_currency(metrics["MaxFinancingNeed"]),
+                delta=formatear_delta(
+                    metrics["MaxFinancingNeed"],
+                    metricas_base_escenario["MaxFinancingNeed"],
+                    format_currency,
+                ),
+            )
+            if "Atractivo" in insight_label:
+                st.success(f"{insight_label} · {insight_text}")
+            elif "Requiere mitigación" in insight_label:
+                st.warning(f"{insight_label} · {insight_text}")
+            else:
+                st.error(f"{insight_label} · {insight_text}")
+
+
+def render_bajo_capot(
+    parametros_ventas: dict,
+    parametros_costos: dict,
+    parametros_tierra: dict,
+    meses_totales: tuple,
+    meses_obra: tuple,
+    tasa_anual: float,
+    df_mc,
+    df_base,
+) -> None:
+    st.markdown("### 7. Bajo el capot")
+    with st.expander("Bajo el capot"):
+        st.markdown("#### Sensibilidad rápida")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            precio_factor = st.slider("Precio vs Base", 0.7, 1.3, 1.0, 0.05, format="%.2f")
+        with col_b:
+            costo_factor = st.slider("Costo vs Base", 0.7, 1.3, 1.0, 0.05, format="%.2f")
+
+        metricas_sens = recalcular_metricas_escenario(
+            parametros_ventas,
+            parametros_costos,
+            parametros_tierra,
+            meses_totales,
+            meses_obra,
+            tasa_anual,
+            factor_precio=precio_factor,
+            factor_costo=costo_factor,
+        )
+        st.metric("VAN ajustado", format_currency(metricas_sens["VAN"]))
+        st.metric("TIR ajustada", format_percent(metricas_sens["TIR"]))
+
+        st.markdown("#### Datos")
+        if df_mc is not None and not getattr(df_mc, "empty", False):
+            st.dataframe(df_mc, width="stretch")
+        else:
+            st.dataframe(df_base, width="stretch")
+
+
+def main() -> None:
+    st.set_page_config(
+        page_title="Modelo de Riesgo Inmobiliario",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    cargar_css()
+
+    st.title("Modelo de Riesgo Inmobiliario")
+    st.markdown("---")
+
+    project_config, parametros_mc = render_sidebar()
+    parametros_ventas, parametros_costos, parametros_tierra = project_config.generar_parametros_simulacion()
+    meses_totales = project_config.meses_totales
+    meses_obra = project_config.meses_obra
+
+    df_base, metricas_base = model.ejecutar_deterministico(
+        parametros_ventas,
+        parametros_costos,
+        parametros_tierra,
+        meses_totales=meses_totales,
+        meses_obra=meses_obra,
+        tasa_anual=parametros_mc["tasa_anual"],
+    )
 
     with st.spinner(f"Calculando {parametros_mc['n_sims']:,} escenarios..."):
-        df_mc, df_curvas = _ejecutar_montecarlo_cacheado(
+        df_mc, _df_curvas = _ejecutar_montecarlo_cacheado(
             parametros_mc["n_sims"],
             parametros_ventas,
             parametros_costos,
             parametros_tierra,
-            project_config.meses_totales,
-            project_config.meses_obra,
+            meses_totales,
+            meses_obra,
             parametros_mc["tasa_anual"],
             parametros_mc["sales_cv"],
             parametros_mc["cost_cv"],
@@ -453,283 +508,33 @@ with st.spinner("Calculando sensibilidad..."):
             parametros_ventas,
             parametros_costos,
             parametros_tierra,
-            project_config.meses_totales,
-            project_config.meses_obra,
+            meses_totales,
+            meses_obra,
             parametros_mc["tasa_anual"],
             pasos=4,
         )
 
-outputs = {
-        "parametros_ventas": parametros_ventas,
-        "parametros_costos": parametros_costos,
-        "parametros_tierra": parametros_tierra,
-        "meses_totales": project_config.meses_totales,
-        "meses_obra": project_config.meses_obra,
-        "df_base": df_base,
-        "metricas_base": metricas_base,
-        "df_mc": df_mc,
-        "df_curvas": df_curvas,
-        "df_sens": df_sens,
-    }
-
-flow_chart = viz.get_unified_flow_chart(
-    df_base,
-    is_montecarlo=False,
-    construction_end=project_config.meses_obra[1],
-)
-
-
-def render_bajo_capot(*_args, **_kwargs) -> None:
-    """Sección técnica placeholder para evitar errores en tiempo de ejecución."""
-    st.caption("Parámetros y resultados técnicos calculados correctamente.")
-
-
-def render_kpis(metricas_base: dict, df_mc) -> None:
-    st.markdown("### 0. Metricas clave")
-
-    if df_mc is None or df_mc.empty:
-        van_p05 = van_p95 = 0.0
-        prob_loss = 0.0
-    else:
-        van_stats = df_mc["VAN"].describe(percentiles=[0.05, 0.5, 0.95])
-        van_p05 = van_stats["5%"]
-        van_p95 = van_stats["95%"]
-        prob_loss = (df_mc["VAN"] < 0).mean()
-
-    k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
-    k1.metric("VAN Base", format_currency(metricas_base["VAN"]))
-    k2.metric("TIR", format_percent(metricas_base["TIR"]))
-    k3.metric("Capital Trabajo", format_currency(metricas_base["MaxFinancingNeed"]))
-    k4.metric("VAN P05", format_currency(van_p05))
-    k5.metric("VAN P95", format_currency(van_p95))
-    k6.metric("Prob. Perdida", format_percent(prob_loss))
-    k7.metric(
-        "Break Even",
-        f"M{int(metricas_base['BreakEvenMonth'])}" if metricas_base["BreakEvenMonth"] else "-",
-    )
-
-has_mc_data = df_mc is not None and not getattr(df_mc, "empty", False) and 'VAN' in df_mc
-if has_mc_data:
-    van_stats = df_mc['VAN'].describe(percentiles=[0.05, 0.5, 0.95])
-    prob_loss = (df_mc['VAN'] < 0).mean()
-else:
-    van_stats = {'5%': metricas_base['VAN'], '95%': metricas_base['VAN']}
-    prob_loss = 0.0
-
-k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
-k1.metric("VAN Base", format_currency(metricas_base['VAN']), help="Valor Actual Neto escenario base")
-k2.metric("TIR", format_percent(metricas_base['TIR']), help="Tasa Interna de Retorno")
-k3.metric("Capital Trabajo", format_currency(metricas_base['MaxFinancingNeed']), help="Maxima necesidad financiera (Déficit acumulado)")
-k4.metric("VAN P05", format_currency(van_stats['5%']), help="Percentil 05 (pesimista)")
-k5.metric("VAN P95", format_currency(van_stats['95%']), help="Percentil 95 (optimista)")
-k6.metric("Prob. Perdida", format_percent(prob_loss), help="% escenarios VAN < 0")
-k7.metric("Break Even", f"M{int(metricas_base.get('BreakEvenMonth'))}" if metricas_base.get('BreakEvenMonth') else "-")
-
-if has_mc_data:
-    st.info(
-        "Con 90% de confianza, el VAN estará entre "
-        f"{format_currency(van_stats['5%'])} y {format_currency(van_stats['95%'])}. "
-        f"Riesgo de pérdida: {format_percent(prob_loss)}."
-    )
-else:
-    st.warning("No se pudieron calcular estadísticas Monte Carlo; mostrando métricas del escenario base.")
-
-    escenarios = {
-        "Base": (1.0, 1.0, "Precio = base | Costo = base"),
-        "Pesimista": (0.9, 1.1, "Precio -10% | Costo +10%"),
-        "Optimista": (1.1, 0.9, "Precio +10% | Costo -10%"),
-    }
-
-    cols = st.columns(3)
-    for col, (label, (f_precio, f_costo, detalle)) in zip(cols, escenarios.items()):
-        params_ventas = parametros_ventas.copy()
-        params_costos = parametros_costos.copy()
-        params_ventas["area_n"] = params_ventas.get("area_n", 0) * f_precio
-        params_costos["limite_n"] = params_costos.get("limite_n", 0) * f_costo
-
-        _, metrics = model.ejecutar_deterministico(
-            params_ventas,
-            params_costos,
-            parametros_tierra,
-            meses_totales=meses_totales,
-            meses_obra=meses_obra,
-            tasa_anual=tasa_anual,
-        )
-        with col:
-            st.subheader(label)
-            st.caption(detalle)
-            st.metric("VAN", format_currency(metrics["VAN"]))
-            st.metric("TIR", format_percent(metrics["TIR"]))
-            st.metric("Capital Trabajo", format_currency(metrics["MaxFinancingNeed"]))
-
-
-def render_distribuciones(
-    df_mc,
-    *,
-    chart_van=None,
-    chart_tir=None,
-    chart_ventas=None,
-    chart_costos=None,
-    chart_sens_tir=None,
-) -> None:
-    if df_mc is None or getattr(df_mc, "empty", False):
-        return
-
-chart_van = None
-chart_tir = None
-chart_ventas = None
-chart_costos = None
-if df_mc is not None and not getattr(df_mc, "empty", False):
-    chart_van, chart_tir = viz.crear_graficos_montecarlo(df_mc)
-
-chart_sens_van = None
-chart_sens_tir = None
-if df_sens is not None and not getattr(df_sens, "empty", False):
-    chart_sens_van, chart_sens_tir = viz.crear_matrices_sensibilidad(df_sens)
-
-# 1. Evolución del Saldo (Riesgo) + Ingresos vs Egresos (Neto)
-st.markdown("### 1-2. Evolución del Saldo (Riesgo) + Ingresos vs Egresos (Neto)")
-st.caption("Incluye arriba Ingresos vs Egresos (Neto) y abajo la curva de saldo acumulado.")
-render_altair_stretch(flow_chart)
-
-# 2. Distribución VAN
-st.markdown("### 3. Distribución VAN")
-if chart_van is not None:
-    render_altair_stretch(chart_van)
-else:
-    st.warning("No se pudo generar la distribución VAN para la corrida actual.")
-
-# 3. Sensibilidad VAN (Bubbles)
-st.markdown("### 4. Sensibilidad VAN (Bubbles)")
-if chart_sens_van is not None:
-    render_altair_stretch(chart_sens_van)
-else:
-    st.warning("No se pudo generar la matriz de sensibilidad para la corrida actual.")
-
-# 4. Comparación de Escenarios
-st.markdown("### 5. Comparación de Escenarios")
-st.caption("Supuestos por escenario: Base (precio 100% / costo 100%), Pesimista (precio -10% / costo +10%), Optimista (precio +10% / costo -10%).")
-escenarios = {
-    "Base": (1.0, 1.0, "Precio = base | Costo = base"),
-    "Pesimista": (0.9, 1.1, "Precio -10% | Costo +10%"),
-    "Optimista": (1.1, 0.9, "Precio +10% | Costo -10%")
-}
-metricas_escenarios = {
-    label: recalcular_metricas_escenario(
+    render_kpis(metricas_base, df_mc)
+    render_distribuciones(df_base, meses_obra, df_mc, df_sens)
+    render_comparacion_escenarios(
         parametros_ventas,
         parametros_costos,
         parametros_tierra,
         meses_totales,
         meses_obra,
-        tasa_anual,
-        factor_precio=f_precio,
-        factor_costo=f_costo
-    )
-    for label, (f_precio, f_costo, _) in escenarios.items()
-}
-metricas_base_escenario = metricas_escenarios["Base"]
-
-cols = st.columns(3)
-for col, (label, (_, _, detalle)) in zip(cols, escenarios.items()):
-    metrics = metricas_escenarios[label]
-    insight_label, insight_text = clasificar_escenario(metrics)
-
-    with col:
-        st.subheader(label)
-        st.caption(detalle)
-        st.metric(
-            "VAN",
-            format_currency(metrics['VAN']),
-            delta=formatear_delta(metrics['VAN'], metricas_base_escenario['VAN'], format_currency)
-        )
-        st.metric(
-            "TIR",
-            format_percent(metrics['TIR']),
-            delta=formatear_delta(metrics['TIR'], metricas_base_escenario['TIR'], format_percent)
-        )
-        st.metric(
-            "Capital Trabajo",
-            format_currency(metrics['MaxFinancingNeed']),
-            delta=formatear_delta(
-                metrics['MaxFinancingNeed'],
-                metricas_base_escenario['MaxFinancingNeed'],
-                format_currency
-            )
-        )
-        st.markdown("**Δ vs Base**")
-        st.caption(
-            f"VAN {formatear_delta(metrics['VAN'], metricas_base_escenario['VAN'], format_currency)} | "
-            f"TIR {formatear_delta(metrics['TIR'], metricas_base_escenario['TIR'], format_percent)} | "
-            f"Capital {formatear_delta(metrics['MaxFinancingNeed'], metricas_base_escenario['MaxFinancingNeed'], format_currency)}"
-        )
-
-        if "Atractivo" in insight_label:
-            st.success(f"{insight_label} · {insight_text}")
-        elif "Requiere mitigación" in insight_label:
-            st.warning(f"{insight_label} · {insight_text}")
-        else:
-            st.error(f"{insight_label} · {insight_text}")
-
-# 5. Distribuciones (Monte Carlo)
-if df_mc is not None and not getattr(df_mc, "empty", False) and chart_tir is not None:
-    st.markdown("### 6. Distribuciones (Monte Carlo)")
-    st.caption("Fila 1: resultado financiero del proyecto (VAN y TIR).")
-
-    c1, c2 = st.columns(2)
-    with c1:
-        if chart_van is not None:
-            render_altair_stretch(chart_van)
-        else:
-            st.info("Gráfico VAN no disponible en esta ejecución.")
-    with c2:
-        if chart_tir is not None:
-            render_altair_stretch(chart_tir)
-        else:
-            st.info("Gráfico TIR no disponible en esta ejecución.")
-
-    c3, c4 = st.columns(2)
-    with c3:
-        if chart_ventas is not None:
-            render_altair_stretch(chart_ventas)
-    with c4:
-        if chart_sens_tir is not None:
-            render_altair_stretch(chart_sens_tir)
-        else:
-            st.warning("No se pudo generar la sensibilidad de TIR para la corrida actual.")
-
-# 7. Bajo el capot
-st.markdown("### 7. Bajo el capot")
-with st.expander("Bajo el capot"):
-    st.markdown("#### Sensibilidad rápida")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        precio_factor = st.slider("Precio vs Base", 0.7, 1.3, 1.0, 0.05, format="%.2f")
-    with col_b:
-        costo_factor = st.slider("Costo vs Base", 0.7, 1.3, 1.0, 0.05, format="%.2f")
-
-    metricas_sens = recalcular_metricas_escenario(
-        parametros_ventas,
-        parametros_costos,
-        parametros_tierra,
-        meses_totales,
-        meses_obra,
-        tasa_anual,
-        factor_precio=precio_factor,
-        factor_costo=costo_factor
+        parametros_mc["tasa_anual"],
     )
     render_bajo_capot(
-        outputs["parametros_ventas"],
-        outputs["parametros_costos"],
-        outputs["parametros_tierra"],
-        outputs["meses_totales"],
-        outputs["meses_obra"],
+        parametros_ventas,
+        parametros_costos,
+        parametros_tierra,
+        meses_totales,
+        meses_obra,
         parametros_mc["tasa_anual"],
-        outputs["df_mc"],
-        outputs["df_base"],
+        df_mc,
+        df_base,
     )
 
-    st.markdown("#### Datos")
-    if df_mc is not None and not getattr(df_mc, "empty", False):
-        st.dataframe(df_mc, width="stretch")
-    else:
-        st.dataframe(df_base, width="stretch")
+
+if __name__ == "__main__":
+    main()
