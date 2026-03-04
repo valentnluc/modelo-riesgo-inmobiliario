@@ -285,7 +285,7 @@ with c2:
 
 # RESUMEN
 st.markdown("---")
-st.markdown("### Resumen Ejecutivo")
+st.markdown("### Resumen")
 
 # Helpers de formato condicional
 def color_metric(val, string_val, inverse=False):
@@ -313,13 +313,12 @@ st.markdown(f"""
 """)
 
 # SEMAFORO FINAL
-st.markdown("#### Diagnostico General")
 if van_val < 0 or prob_loss > 0.50:
-    st.error(f"🔴 **PROYECTO NO VIABLE:** El escenario base arroja destrucción de valor nominal, o su riesgo probabilístico de entrar en pérdida es críticamente alto (>{format_percent(0.50)}).")
+    st.error(f"🔴 **No viable:** El escenario base arroja destrucción de valor nominal, o su riesgo probabilístico de entrar en pérdida es críticamente alto (>{format_percent(0.50)}).")
 elif van_val > 0 and prob_loss <= 0.20:
-    st.success(f"🟢 **PROYECTO SALUDABLE:** El escenario base nominal es rentable y presenta un margen de seguridad cómodo ante variabilidades (Riesgo <{format_percent(0.20)}).")
+    st.success(f"🟢 **Saludable:** El escenario base nominal es rentable y presenta un margen de seguridad cómodo ante variabilidades (Riesgo <{format_percent(0.20)}).")
 else:
-    st.warning("🟡 **PROYECTO CON RIESGO MODERADO:** Si bien el escenario nominal es positivo, la sensibilidad proyectada arroja ciertas fragilidades sobre el retorno buscado bajo condiciones de alto estrés.")
+    st.warning("🟡 **Riesgo moderado:** Si bien el escenario nominal es positivo, la sensibilidad proyectada arroja ciertas fragilidades sobre el retorno buscado bajo condiciones de alto estrés.")
 
 st.markdown("---")
 
