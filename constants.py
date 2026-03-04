@@ -3,7 +3,6 @@
 # SIMULACIÓN
 
 DEFAULT_ANNUAL_RATE = 0.10       # Tasa de descuento por defecto (10%)
-DEFAULT_N_POINTS = 500           # Puntos para discretización de curvas
 DEFAULT_PROJECT_MONTHS = 36      # Duración típica de un proyecto
 IRR_GUESS_BOUNDS = (-0.99, 10.0) # Límites para búsqueda de TIR
 
@@ -11,11 +10,11 @@ IRR_GUESS_BOUNDS = (-0.99, 10.0) # Límites para búsqueda de TIR
 # COLORES / TEMA
 
 COLORS = {
-    # Colores principales
-    'primary': '#ff4b4b',      # Rojo Streamlit
-    'secondary': '#0068c9',    # Azul
-    'tertiary': '#83c9ff',     # Azul claro
-    'quaternary': '#29b09d',   # Verde teal
+    # Colores principales (THEME.md)
+    'primary': '#ef4444',      # Rojo
+    'secondary': '#3b82f6',    # Azul
+    'tertiary': '#10b981',     # Verde (éxito/estable)
+    'quaternary': '#29b09d',   # Teal (acumulado)
     
     # Grises para UI
     'text': '#262730',
@@ -26,7 +25,7 @@ COLORS = {
     'background_alt': '#f0f2f6',
     
     # Alias
-    'brand': '#0068c9',        # Alias - para compatibilidad viz.py (Blue)
+    'brand': '#3b82f6',        # Azul principal
 }
 
 # Alias para gráficos de flujos
@@ -60,15 +59,15 @@ def format_currency(value: float) -> str:
     sign = '-' if value < 0 else ''
     
     if abs_val >= 1_000_000:
-        return f"{sign}${abs_val/1_000_000:.1f}M"
+        return f"{sign}${abs_val/1_000_000:.2f}M"
     elif abs_val >= 1_000:
-        return f"{sign}${abs_val/1_000:.0f}K"
+        return f"{sign}${abs_val/1_000:.2f}K"
     else:
-        return f"{sign}${abs_val:.0f}"
+        return f"{sign}${abs_val:.2f}"
 
 
 def format_percent(value: float) -> str:
-    """Formato porcentaje: 15.0%."""
+    """Formato porcentaje: 15.00%."""
     if value is None:
         return "N/A"
-    return f"{value*100:.1f}%"
+    return f"{value*100:.2f}%"

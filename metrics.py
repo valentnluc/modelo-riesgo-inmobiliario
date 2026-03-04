@@ -4,23 +4,24 @@ Métricas financieras (VAN, TIR, Déficit, Break-even).
 
 import numpy as np
 import pandas as pd
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
 from scipy.optimize import brentq
 
-from constants import IRR_GUESS_BOUNDS
-
-
-def calcular_van(df: pd.DataFrame, tasa_anual: float) -> float:
+def calcular_van(datos: Union[pd.DataFrame, Tuple[np.ndarray, np.ndarray]], tasa_anual: float) -> float:
     """
     Calcula el Valor Actual Neto (VAN).
     VAN = Σ (flujo_t / (1 + r)^t)
+    Puede recibir un DataFrame o una tupla de arreglos (flujos, meses).
     """
     # Convertir tasa anual a mensual
     tasa_mensual = (1 + tasa_anual) ** (1/12) - 1
     
-    flujos = df['Flujo_Neto'].values
-    meses = df['Mes'].values
-    
+    if isinstance(datos, pd.DataFrame):
+        flujos = datos['Flujo_Neto'].values
+        meses = datos['Mes'].values
+    else:
+        flujos, meses = datos
+        
     # Factor de descuento para cada mes
     factores = (1 + tasa_mensual) ** meses
     
@@ -28,20 +29,21 @@ def calcular_van(df: pd.DataFrame, tasa_anual: float) -> float:
     return float(np.sum(flujos / factores))
 
 
-def calcular_tir(df: pd.DataFrame) -> Optional[float]:
+def calcular_tir(datos: Union[pd.DataFrame, Tuple[np.ndarray, np.ndarray]]) -> Optional[float]:
     """
     Calcula la Tasa Interna de Retorno (TIR).
     Retorna la tasa que hace VAN=0, o None si no converge.
+    Puede recibir un DataFrame o una tupla de arreglos (flujos, meses).
     """
-    flujos = df['Flujo_Neto'].values
-    meses = df['Mes'].values
-    
+    if isinstance(datos, pd.DataFrame):
+        flujos = datos['Flujo_Neto'].values
+        meses = datos['Mes'].values
+    else:
+        flujos, meses = datos
+        
     # Fast-fail: verificar si hay cambio de signo en los flujos
     # Si todos los flujos son negativos o todos positivos, no hay TIR
-    flujos_positivos = flujos[flujos > 0]
-    flujos_negativos = flujos[flujos < 0]
-    
-    if len(flujos_positivos) == 0 or len(flujos_negativos) == 0:
+    if not (np.any(flujos > 0) and np.any(flujos < 0)):
         return None
     
     # Fast-fail: si la suma total es muy negativa, no hay TIR realista
@@ -99,18 +101,24 @@ def calcular_tir(df: pd.DataFrame) -> Optional[float]:
             else:
                 return None
         
-        return float(brentq(van_a_tasa, low, high, maxiter=100))  # Reducido maxiter
+        return float(brentq(van_a_tasa, low, high, maxiter=50))  # Reducido maxiter
         
     except Exception:
         return None
 
 
-def calcular_max_deficit(df: pd.DataFrame) -> Tuple[float, Optional[float]]:
+def calcular_max_deficit(datos: Union[pd.DataFrame, Tuple[np.ndarray, np.ndarray]]) -> Tuple[float, Optional[float]]:
     """
     Encuentra el punto de máxima exposición financiera (valle del cash acumulado).
     Returns: (monto_déficit, mes)
+    Puede recibir un DataFrame o una tupla de arreglos (cash_acumulado, meses).
     """
-    acumulado = df['Cash_Acumulado'].values
+    if isinstance(datos, pd.DataFrame):
+        acumulado = datos['Cash_Acumulado'].values
+        meses = datos['Mes'].values
+    else:
+        acumulado, meses = datos
+        
     minimo = float(np.min(acumulado))
     
     if minimo >= 0:
@@ -118,17 +126,27 @@ def calcular_max_deficit(df: pd.DataFrame) -> Tuple[float, Optional[float]]:
     
     # Encontrar en qué mes ocurre el mínimo
     idx_minimo = int(np.argmin(acumulado))
-    mes_minimo = float(df['Mes'].iloc[idx_minimo])
+    mes_minimo = float(meses[idx_minimo])
     
     # El déficit es el valor absoluto del mínimo
     return float(-minimo), mes_minimo
 
 
-def calcular_break_even(df: pd.DataFrame) -> Optional[float]:
-    """Primer mes con saldo acumulado positivo."""
-    positivos = df['Cash_Acumulado'] >= 0
+def calcular_break_even(datos: Union[pd.DataFrame, Tuple[np.ndarray, np.ndarray]]) -> Optional[float]:
+    """
+    Primer mes con saldo acumulado positivo.
+    Puede recibir un DataFrame o una tupla de arreglos (cash_acumulado, meses).
+    """
+    if isinstance(datos, pd.DataFrame):
+        acumulado = datos['Cash_Acumulado'].values
+        meses = datos['Mes'].values
+    else:
+        acumulado, meses = datos
+        
+    positivos = acumulado > 0
     
-    if positivos.any():
-        return float(df.loc[positivos, 'Mes'].iloc[0])
+    if np.any(positivos):
+        idx_first_positive = np.argmax(positivos)
+        return float(meses[idx_first_positive])
     
     return None

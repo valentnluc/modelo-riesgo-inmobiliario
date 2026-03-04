@@ -5,7 +5,6 @@ import pandas as pd
 from typing import Tuple, Optional
 
 from presets import generar_curva_ventas_acumulada, generar_curva_inversion
-from constants import DEFAULT_N_POINTS
 
 
 def construir_flujo_caja(
@@ -14,38 +13,35 @@ def construir_flujo_caja(
     parametros_tierra: dict,
     meses: Tuple[int, int] = (0, 36),
     meses_obra: Optional[Tuple[int, int]] = None,
-    n_puntos: int = DEFAULT_N_POINTS,
 ) -> pd.DataFrame:
     """
-    Construye el flujo de caja.
-    
-    1. Curva de ventas
-    2. Curva de egresos (obra)
-    3. Cronograma tierra
-    4. Neto = Ventas - Obra - Tierra
+    Construye el flujo de caja utilizando matemática discreta de meses enteros.
     """
     # 1. Generar curva de ventas
     x, ventas_acum = generar_curva_ventas_acumulada(
         parametros=parametros_ventas,
-        meses=meses,
-        n_puntos=n_puntos
+        meses=meses
     )
     ventas_mensuales = np.diff(ventas_acum, prepend=0.0)
     
     # 2. Generar curva de costos de obra
     periodo_obra = meses_obra if meses_obra else meses
-    _, obra_acum = generar_curva_inversion(
+    x_obra, obra_acum = generar_curva_inversion(
         parametros=parametros_costos,
-        meses=periodo_obra,
-        n_puntos=n_puntos
+        meses=periodo_obra
     )
-    # Interpolar al eje X de ventas si es necesario
-    x_obra = np.linspace(periodo_obra[0], periodo_obra[1], n_puntos)
-    obra_acum_interp = np.interp(x, x_obra, obra_acum)
-    obra_mensual = np.diff(obra_acum_interp, prepend=0.0)
     
+    obra_mensual = np.zeros_like(x, dtype=float)
+    obra_mensual_local = np.diff(obra_acum, prepend=0.0)
+    
+    # Mapear los flujos de obra (que pueden tener distinto inicio/fin) al eje x principal
+    for ix_local, mes_val in enumerate(x_obra):
+        if mes_val in x:
+            idx_global = np.where(x == mes_val)[0][0]
+            obra_mensual[idx_global] = obra_mensual_local[ix_local]
+            
     # 3. Generar cronograma de tierra
-    tierra_mensual = _crear_cronograma_tierra(parametros_tierra, meses, x, n_puntos)
+    tierra_mensual = _crear_cronograma_tierra(parametros_tierra, meses, x)
     
     # 4. Calcular flujo neto
     flujo_neto = ventas_mensuales - obra_mensual - tierra_mensual
@@ -90,8 +86,7 @@ def calcular_flujo_rapido(
     })
 
 
-def _crear_cronograma_tierra(parametros_tierra: dict, meses: Tuple[int, int], 
-                             x: np.ndarray, n_puntos: int) -> np.ndarray:
+def _crear_cronograma_tierra(parametros_tierra: dict, meses: Tuple[int, int], x: np.ndarray) -> np.ndarray:
     """
     Crea el cronograma de pagos de tierra.
     
@@ -115,9 +110,12 @@ def _crear_cronograma_tierra(parametros_tierra: dict, meses: Tuple[int, int],
         if 0 <= mes < n_meses:
             cronograma[mes] += valor_total * pago['pct']
     
-    # Interpolar al eje X
-    tierra_acum = np.cumsum(cronograma)
-    meses_int = np.arange(n_meses)
-    tierra_interp = np.interp(x, meses_int, tierra_acum)
+    tierra_mensual = np.zeros(len(x))
     
-    return np.diff(tierra_interp, prepend=0.0)
+    # Asignar a los meses correspondientes en x
+    for m in range(n_meses):
+        if m in x:
+            idx = np.where(x == m)[0][0]
+            tierra_mensual[idx] = cronograma[m]
+            
+    return tierra_mensual

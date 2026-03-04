@@ -76,13 +76,15 @@ def calcular_loc(target_mode: float, alpha: float, scale: float) -> float:
     return target_mode - (scale * m0)
 
 
-def generar_curva_ventas(parametros: dict, meses=(0, 36), n_puntos: int = 500):
+def generar_curva_ventas(parametros: dict, meses=(0, 36)):
     inicio, fin = meses
     duracion = fin - inicio
+    n_meses = int(fin) + 1
+    
+    x = np.arange(n_meses)
+    
     if duracion <= 0:
-        return np.linspace(inicio, fin, n_puntos), np.zeros(n_puntos)
-        
-    x = np.linspace(inicio, fin, n_puntos)
+        return x, np.zeros(n_meses)
     
     # Handle both relative (new) and absolute (legacy/custom) params
     if 'moda_pct' in parametros:
@@ -102,7 +104,11 @@ def generar_curva_ventas(parametros: dict, meses=(0, 36), n_puntos: int = 500):
     loc = calcular_loc(mode, alpha, scale)
     y_base = skewnorm.pdf(x, alpha, loc=loc, scale=scale)
     
-    area = simpson(y_base, x)
+    # Anular flujo fuera del rango de actividad
+    mask_fuera = (x < inicio) | (x > fin)
+    y_base[mask_fuera] = 0.0
+    
+    area = np.sum(y_base)
     if area <= 1e-9:
         return x, np.zeros_like(x)
         
@@ -111,13 +117,15 @@ def generar_curva_ventas(parametros: dict, meses=(0, 36), n_puntos: int = 500):
     return x, y
 
 
-def generar_curva_ventas_acumulada(parametros: dict, meses=(0, 36), n_puntos: int = 500):
+def generar_curva_ventas_acumulada(parametros: dict, meses=(0, 36)):
     inicio, fin = meses
     duracion = fin - inicio
+    n_meses = int(fin) + 1
+    
+    x = np.arange(n_meses)
+    
     if duracion <= 0:
-        return np.linspace(inicio, fin, n_puntos), np.zeros(n_puntos)
-
-    x = np.linspace(inicio, fin, n_puntos)
+        return x, np.zeros(n_meses)
     
     if 'moda_pct' in parametros:
         mode = inicio + (parametros['moda_pct'] * duracion)
@@ -134,46 +142,27 @@ def generar_curva_ventas_acumulada(parametros: dict, meses=(0, 36), n_puntos: in
     
     loc = calcular_loc(mode, alpha, scale)
     
-    y_cdf = skewnorm.cdf(x, alpha, loc=loc, scale=scale)
+    # Calcular PDF discreto para no perder precision en sumas vs integrales
+    y_pdf = skewnorm.pdf(x, alpha, loc=loc, scale=scale)
     
-    # Normalize to ensure we reach exactly total_val
-    max_cdf = y_cdf[-1]
+    # Anular flujo fuera del rango
+    mask_fuera = (x < inicio) | (x > fin)
+    y_pdf[mask_fuera] = 0.0
     
-    # Corregir offset para arrancar en 0
-    min_cdf = y_cdf[0]
+    sum_pdf = np.sum(y_pdf)
     
-    if (max_cdf - min_cdf) <= 1e-9:
+    if sum_pdf <= 1e-9:
         return x, np.zeros_like(x)
         
-    # Scale (0 to 1) over the viewed window
-    y_scaled = ((y_cdf - min_cdf) / (max_cdf - min_cdf)) * total_val
-    
-    # Normalizamos el rango visible de 0 a total_val.
-    # Esto fuerza que la curva arranque en 0 al inicio del proyecto.
+    # Scale probabilities and compute cumulative sum
+    y_pdf_scaled = (y_pdf / sum_pdf) * total_val
+    y_scaled = np.cumsum(y_pdf_scaled)
     
     return x, y_scaled
 
 
-def generar_curva_inversion(parametros: dict, meses=(0, 36), n_puntos: int = 500):
+def generar_curva_inversion(parametros: dict, meses=(0, 36)):
     p_copy = parametros.copy()
     p_copy['area_n'] = parametros.get('limite_n', 1.0)
     
-    return generar_curva_ventas_acumulada(p_copy, meses, n_puntos)
-
-
-def crear_cronograma_tierra(parametros_tierra: dict, rango_meses: tuple) -> np.ndarray:
-    n_meses = int(rango_meses[1]) + 1
-    cronograma = np.zeros(n_meses)
-    
-    total_value = parametros_tierra.get('valor_total', 0)
-    
-    if parametros_tierra.get('tipo') == 'canje':
-        return cronograma
-        
-    pagos = parametros_tierra.get('pagos', [])
-    for p in pagos:
-        m = int(p['mes'])
-        if 0 <= m < n_meses:
-            cronograma[m] += total_value * p['pct']
-            
-    return cronograma
+    return generar_curva_ventas_acumulada(p_copy, meses)

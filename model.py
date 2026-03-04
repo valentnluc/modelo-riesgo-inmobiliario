@@ -8,10 +8,10 @@ las funciones de alto nivel para ejecutar simulaciones.
 import pandas as pd
 import numpy as np
 from dataclasses import dataclass
-from typing import Tuple, Dict, Any, Optional
+from typing import Tuple, Dict, Optional
 
 from cashflow import construir_flujo_caja
-from metrics import calcular_van, calcular_tir, calcular_max_deficit, calcular_break_even
+from metrics import calcular_van, calcular_tir
 from simulation import simular
 from constants import DEFAULT_ANNUAL_RATE
 
@@ -120,39 +120,7 @@ class ProjectConfig:
         
         return p_ventas, p_costos, p_tierra
 
-def ejecutar_deterministico(
-    parametros_ventas: dict,
-    parametros_costos: dict,
-    parametros_tierra: dict,
-    meses_totales: Tuple[int, int],
-    meses_obra: Tuple[int, int],
-    tasa_anual: float = DEFAULT_ANNUAL_RATE
-) -> Tuple[pd.DataFrame, Dict[str, float]]:
-    """Correr un escenario determinístico único."""
-    # Construir flujo
-    df = construir_flujo_caja(
-        parametros_ventas, 
-        parametros_costos, 
-        parametros_tierra, 
-        meses_totales, 
-        meses_obra
-    )
-    
-    # Calcular métricas
-    van = calcular_van(df, tasa_anual)
-    tir = calcular_tir(df)
-    deficit, mes_deficit = calcular_max_deficit(df)
-    break_even = calcular_break_even(df)
-    
-    metricas = {
-        'VAN': van,
-        'TIR': tir,
-        'MaxFinancingNeed': deficit,
-        'MaxFinancingMonth': mes_deficit,
-        'BreakEvenMonth': break_even
-    }
-    
-    return df, metricas
+# La función ejecutar_deterministico ha sido eliminada por completo.
 
 
 def ejecutar_montecarlo(
@@ -205,23 +173,37 @@ def ejecutar_analisis_sensibilidad(
     base_ventas = parametros_ventas.get('area_n', 1000)
     base_costos = parametros_costos.get('limite_n', 1000)
     
+    # Pre-calcular modelo base normalizado para escalar rápido O(1)
+    df_unitario = construir_flujo_caja(
+        {**parametros_ventas, 'area_n': 1.0}, 
+        {**parametros_costos, 'limite_n': 1.0}, 
+        {**parametros_tierra, 'valor_total': 0.0}, # Extraer tierra aparte
+        meses_totales, meses_obra
+    )
+    meses_arr = df_unitario['Mes'].values
+    ventas_norm_arr = df_unitario['Ventas'].values
+    costos_norm_arr = df_unitario['Egresos_Obra'].values
+    
+    # Extraer tierra real (que no varía)
+    df_tierra = construir_flujo_caja(
+        {**parametros_ventas, 'area_n': 0.0}, 
+        {**parametros_costos, 'limite_n': 0.0}, 
+        parametros_tierra, 
+        meses_totales, meses_obra
+    )
+    tierra_arr = df_tierra['Egresos_Tierra'].values
+    
     for var_v in variaciones:
         for var_c in variaciones:
-            # Ajustar params
-            p_ventas = parametros_ventas.copy()
-            p_ventas['area_n'] = base_ventas * (1 + var_v)
+            # Flujos escalados dinamicamente
+            v_val = base_ventas * (1 + var_v)
+            c_val = base_costos * (1 + var_c)
             
-            p_costos = parametros_costos.copy()
-            p_costos['limite_n'] = base_costos * (1 + var_c)
+            flujo_neto_arr = (ventas_norm_arr * v_val) - (costos_norm_arr * c_val) - tierra_arr
+            datos_metrics = (flujo_neto_arr, meses_arr)
             
-            # Ejecutar modelo
-            df = construir_flujo_caja(
-                p_ventas, p_costos, parametros_tierra, 
-                meses_totales, meses_obra
-            )
-            
-            van = calcular_van(df, tasa_anual)
-            tir = calcular_tir(df)
+            van = calcular_van(datos_metrics, tasa_anual)
+            tir = calcular_tir(datos_metrics)
             
             resultados.append({
                 'Variacion_Precio': var_v,

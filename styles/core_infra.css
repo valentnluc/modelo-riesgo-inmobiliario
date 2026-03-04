@@ -13,7 +13,7 @@
     --text-primary: #FFFFFF;
     --text-secondary: #A1A1AA;
     --text-muted: #52525B;
-    --brand: #080297;
+    --brand: #3B82F6;
     --signal-stable: #10B981;
     --signal-warning: #F59E0B;
     --signal-critical: #EF4444;
@@ -121,7 +121,7 @@ h3 {
 }
 
 .stButton>button:hover {
-    background-color: #0a03b8 !important;
+    background-color: #2563EB !important;
 }
 
 /* Radio buttons */

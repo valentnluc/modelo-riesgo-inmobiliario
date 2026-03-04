@@ -7,9 +7,9 @@ import pandas as pd
 from typing import Tuple, Optional, Union
 from tqdm import tqdm
 
-from cashflow import construir_flujo_caja, calcular_flujo_rapido
+from cashflow import construir_flujo_caja
 from metrics import calcular_van, calcular_tir
-from constants import DEFAULT_ANNUAL_RATE, DEFAULT_N_POINTS
+from constants import DEFAULT_ANNUAL_RATE
 from presets import generar_curva_ventas_acumulada, generar_curva_inversion
 
 
@@ -54,8 +54,7 @@ def simular(
     params_ventas_norm = {**parametros_ventas, 'area_n': 1.0}
     eje_x, ventas_acum_norm = generar_curva_ventas_acumulada(
         parametros=params_ventas_norm,
-        meses=meses,
-        n_puntos=DEFAULT_N_POINTS
+        meses=meses
     )
     ventas_norm_mensual = np.diff(ventas_acum_norm, prepend=0.0)
     
@@ -63,21 +62,22 @@ def simular(
     periodo_obra = meses_obra if meses_obra else meses
     params_costos_norm = {**parametros_costos, 'limite_n': 1.0}
     
-    _, obra_acum_norm = generar_curva_inversion(
+    x_obra, obra_acum_norm = generar_curva_inversion(
         parametros=params_costos_norm,
-        meses=periodo_obra,
-        n_puntos=DEFAULT_N_POINTS
+        meses=periodo_obra
     )
-    # Interpolar al eje X principal
-    x_obra = np.linspace(periodo_obra[0], periodo_obra[1], DEFAULT_N_POINTS)
-    obra_acum_interp = np.interp(eje_x, x_obra, obra_acum_norm)
-    obra_norm_mensual = np.diff(obra_acum_interp, prepend=0.0)
+    # Interpolar al eje X principal y calcular mensual
+    obra_norm_mensual = np.zeros_like(eje_x, dtype=float)
+    obra_mensual_local = np.diff(obra_acum_norm, prepend=0.0)
+    
+    for ix_local, mes_val in enumerate(x_obra):
+        if mes_val in eje_x:
+            idx_global = np.where(eje_x == mes_val)[0][0]
+            obra_norm_mensual[idx_global] = obra_mensual_local[ix_local]
     
     # 3. Tierra (Fijo)
-    # FIXME: Instanciar dummy para extraer tierra es sub-optimo pero simple.
-    dummy_params_v = {**parametros_ventas, 'area_n': 0}
-    dummy_params_c = {**parametros_costos, 'limite_n': 0}
-    df_dummy = construir_flujo_caja(dummy_params_v, dummy_params_c, parametros_tierra, meses, meses_obra)
+    # Instanciar dummy para extraer tierra. Ya no usa pandas gracias al cambio, devuelve dataframe pero extraemos:
+    df_dummy = construir_flujo_caja({**parametros_ventas, 'area_n': 0}, {**parametros_costos, 'limite_n': 0}, parametros_tierra, meses, meses_obra)
     tierra_mensual = df_dummy['Egresos_Tierra'].values
     
     # Loop Monte Carlo
@@ -95,41 +95,37 @@ def simular(
     
     for i in rango:
         # Variar montos totales
-        if variacion_ventas > 0:
-            v_sim = max(0.0, rng.normal(ventas_base, ventas_base * variacion_ventas))
-        else:
-            v_sim = ventas_base
-            
-        if variacion_costos > 0:
-            c_sim = max(0.0, rng.normal(costos_base, costos_base * variacion_costos))
-        else:
-            c_sim = costos_base
+        v_sim = max(0.0, rng.normal(ventas_base, ventas_base * variacion_ventas)) if variacion_ventas > 0 else ventas_base
+        c_sim = max(0.0, rng.normal(costos_base, costos_base * variacion_costos)) if variacion_costos > 0 else costos_base
         
-        # Calcular usando curvas pre-calculadas (Vectorizado = Rápido)
-        df = calcular_flujo_rapido(
-            ventas_norm_mensual, 
-            obra_norm_mensual, 
-            tierra_mensual, 
-            v_sim, 
-            c_sim, 
-            eje_x
-        )
+        # Flujos base matemáticos (pura aritmética de NumPy)
+        ventas_arr = ventas_norm_mensual * v_sim
+        obra_arr = obra_norm_mensual * c_sim
+        flujo_neto_arr = ventas_arr - obra_arr - tierra_mensual
         
-        # Métricas
-        tir_valor = calcular_tir(df) if i < 100 else None
+        # Métricas directas a matrices
+        datos_metrics = (flujo_neto_arr, eje_x)
+        van_val = calcular_van(datos_metrics, tasa_descuento)
+        tir_val = calcular_tir(datos_metrics) # Ya no hay limite de a<100, NumPy rinde bien
         
         resultados.append({
             'sim_id': i,
-            'VAN': calcular_van(df, tasa_descuento),
-            'TIR': tir_valor,
+            'VAN': van_val,
+            'TIR': tir_val,
             'Total_Ventas': v_sim,
             'Total_Costo': c_sim
         })
         
         if retornar_curvas and i < max_curvas:
-            df_curva = df.copy()
-            df_curva['sim_id'] = i
-            curvas.append(df_curva)
+            curvas.append(pd.DataFrame({
+                'Mes': eje_x,
+                'Ventas': ventas_arr,
+                'Egresos_Obra': obra_arr,
+                'Egresos_Tierra': tierra_mensual,
+                'Flujo_Neto': flujo_neto_arr,
+                'Cash_Acumulado': np.cumsum(flujo_neto_arr),
+                'sim_id': i
+            }))
     
     df_resultados = pd.DataFrame(resultados)
     
