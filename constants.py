@@ -59,11 +59,11 @@ def format_currency(value: float) -> str:
     sign = '-' if value < 0 else ''
     
     if abs_val >= 1_000_000:
-        return f"{sign}${abs_val/1_000_000:.2f}M"
+        return f"{sign}${abs_val/1_000_000:.1f}M"
     elif abs_val >= 1_000:
-        return f"{sign}${abs_val/1_000:.2f}K"
+        return f"{sign}${abs_val/1_000:.1f}K"
     else:
-        return f"{sign}${abs_val:.2f}"
+        return f"{sign}${abs_val:.0f}"
 
 
 def format_percent(value: float) -> str:
